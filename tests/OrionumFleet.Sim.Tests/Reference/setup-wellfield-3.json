@@ -1,0 +1,413 @@
+{
+ "seed": 3,
+ "scenario": "well-field",
+ "terrain": true,
+ "ships": [
+  {
+   "id": 1,
+   "classId": "bastion",
+   "name": "Constance",
+   "side": "coalition",
+   "pos": [
+    0,
+    40,
+    -2200
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 3716,
+   "face": 280,
+   "subsystemHp": 300,
+   "cooldowns": [
+    1.0803401756566018,
+    0.05799324077088386,
+    0.6842882889322937,
+    0.112392014474608
+   ],
+   "empAmmo": 1,
+   "hangarStock": 12,
+   "orionum": true
+  },
+  {
+   "id": 2,
+   "classId": "egide",
+   "name": "Lagrange",
+   "side": "coalition",
+   "pos": [
+    -160,
+    70,
+    -2420
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 1858,
+   "face": 178,
+   "subsystemHp": 180,
+   "cooldowns": [
+    1.1445080847479403,
+    0.721770626725629,
+    0.7300943619338796
+   ],
+   "empAmmo": 0,
+   "hangarStock": 52,
+   "orionum": false
+  },
+  {
+   "id": 3,
+   "classId": "hoplite",
+   "name": "Vesta",
+   "side": "coalition",
+   "pos": [
+    -260,
+    50,
+    -2020
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    0.24270084989257157,
+    0.39488440251443535
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 4,
+   "classId": "hoplite",
+   "name": "Europe",
+   "side": "coalition",
+   "pos": [
+    260,
+    30,
+    -2020
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    0.8289108368335292,
+    0.2923743777209893
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 5,
+   "classId": "hoplite",
+   "name": "Titan",
+   "side": "coalition",
+   "pos": [
+    0,
+    80,
+    -1940
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    0.12538932252209634,
+    1.0706810866249725
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 6,
+   "classId": "vigile",
+   "name": "Olympus",
+   "side": "coalition",
+   "pos": [
+    90,
+    40,
+    -2320
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 1009,
+   "face": 141,
+   "subsystemHp": 100,
+   "cooldowns": [
+    0.7150920579442754,
+    1.1905980870360509,
+    1.3196599903749302,
+    0.4854354994604364
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 7,
+   "classId": "mastodonte",
+   "name": "Vieille Dette",
+   "side": "clans",
+   "pos": [
+    0,
+    0,
+    1350
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 3536,
+   "face": 140,
+   "subsystemHp": 320,
+   "cooldowns": [
+    1.03587209188845,
+    0.43012060364708304,
+    1.0082106355112046,
+    0.7896428662352264,
+    1.2476007723016664,
+    0.8099206737242639,
+    0.017408926505595446
+   ],
+   "empAmmo": 1,
+   "hangarStock": 14,
+   "orionum": true
+  },
+  {
+   "id": 8,
+   "classId": "ruche",
+   "name": "Chienne de Garde",
+   "side": "clans",
+   "pos": [
+    160,
+    30,
+    1570
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 1081,
+   "face": 90,
+   "subsystemHp": 140,
+   "cooldowns": [
+    1.3160315497079864,
+    0.46559551754035056
+   ],
+   "empAmmo": 0,
+   "hangarStock": 56,
+   "orionum": false
+  },
+  {
+   "id": 9,
+   "classId": "ruche",
+   "name": "Marée Rouge",
+   "side": "clans",
+   "pos": [
+    -160,
+    -20,
+    1590
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 1081,
+   "face": 90,
+   "subsystemHp": 140,
+   "cooldowns": [
+    1.405232712510042,
+    1.154053844511509
+   ],
+   "empAmmo": 0,
+   "hangarStock": 56,
+   "orionum": false
+  },
+  {
+   "id": 10,
+   "classId": "ecorcheur",
+   "name": "Sans-Merci",
+   "side": "clans",
+   "pos": [
+    260,
+    10,
+    1170
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 540,
+   "face": 60,
+   "subsystemHp": 70,
+   "cooldowns": [
+    0.63087041687686,
+    1.0720261218957603,
+    0.23149794107303023
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 11,
+   "classId": "ecorcheur",
+   "name": "Dernier Mot",
+   "side": "clans",
+   "pos": [
+    -260,
+    -10,
+    1170
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 540,
+   "face": 60,
+   "subsystemHp": 70,
+   "cooldowns": [
+    0.5518849290674552,
+    1.0840489809634164,
+    0.0021608920069411397
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 12,
+   "classId": "grele",
+   "name": "Croc",
+   "side": "clans",
+   "pos": [
+    -90,
+    0,
+    1470
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 624,
+   "face": 80,
+   "subsystemHp": 80,
+   "cooldowns": [
+    0.012533729430288076,
+    0.7174637939315289,
+    1.2946133500663564
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 13,
+   "classId": "depot",
+   "name": "Tanière",
+   "side": "clans",
+   "pos": [
+    0,
+    -60,
+    1800
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 9200,
+   "face": 300,
+   "subsystemHp": 400,
+   "cooldowns": [
+    0.9044574277941138,
+    1.023097111028619,
+    1.1794690332608297,
+    0.876540235360153,
+    0.8726552134612575
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  }
+ ],
+ "wells": [
+  {
+   "id": 1,
+   "name": "Le Puits",
+   "pos": [
+    -180,
+    0,
+    -350
+   ],
+   "core": 180,
+   "pull": 580,
+   "reach": 1150
+  },
+  {
+   "id": 2,
+   "name": "Charybde",
+   "pos": [
+    -1050,
+    40,
+    700
+   ],
+   "core": 120,
+   "pull": 460,
+   "reach": 900
+  },
+  {
+   "id": 3,
+   "name": "Scylla",
+   "pos": [
+    1050,
+    -40,
+    700
+   ],
+   "core": 120,
+   "pull": 460,
+   "reach": 900
+  },
+  {
+   "id": 4,
+   "name": "Le Voile",
+   "pos": [
+    0,
+    -60,
+    860
+   ],
+   "core": 110,
+   "pull": 420,
+   "reach": 700
+  }
+ ],
+ "depotId": 13,
+ "rngNext": 0.07091895490884781
+}

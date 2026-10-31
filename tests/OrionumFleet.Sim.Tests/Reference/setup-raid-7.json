@@ -1,0 +1,401 @@
+{
+ "seed": 7,
+ "scenario": "wolf359-raid",
+ "terrain": true,
+ "ships": [
+  {
+   "id": 1,
+   "classId": "bastion",
+   "name": "Constance",
+   "side": "coalition",
+   "pos": [
+    0,
+    40,
+    -2200
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 3716,
+   "face": 280,
+   "subsystemHp": 300,
+   "cooldowns": [
+    0.017557129729539156,
+    0.09293738636188209,
+    1.465361449168995,
+    1.0485430585686117
+   ],
+   "empAmmo": 1,
+   "hangarStock": 12,
+   "orionum": true
+  },
+  {
+   "id": 2,
+   "classId": "egide",
+   "name": "Lagrange",
+   "side": "coalition",
+   "pos": [
+    -160,
+    70,
+    -2420
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 1858,
+   "face": 178,
+   "subsystemHp": 180,
+   "cooldowns": [
+    0.7821679027983919,
+    0.6082825320772827,
+    0.6993489487795159
+   ],
+   "empAmmo": 0,
+   "hangarStock": 52,
+   "orionum": false
+  },
+  {
+   "id": 3,
+   "classId": "hoplite",
+   "name": "Vesta",
+   "side": "coalition",
+   "pos": [
+    -260,
+    50,
+    -2020
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    0.359887778875418,
+    0.8299884059233591
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 4,
+   "classId": "hoplite",
+   "name": "Europe",
+   "side": "coalition",
+   "pos": [
+    260,
+    30,
+    -2020
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    1.094733134843409,
+    0.3867233415367082
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 5,
+   "classId": "hoplite",
+   "name": "Titan",
+   "side": "coalition",
+   "pos": [
+    0,
+    80,
+    -1940
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 902,
+   "face": 114,
+   "subsystemHp": 90,
+   "cooldowns": [
+    0.2339225459145382,
+    1.146134829847142
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 6,
+   "classId": "vigile",
+   "name": "Olympus",
+   "side": "coalition",
+   "pos": [
+    90,
+    40,
+    -2320
+   ],
+   "fwd": [
+    0,
+    0,
+    1
+   ],
+   "hull": 1009,
+   "face": 141,
+   "subsystemHp": 100,
+   "cooldowns": [
+    0.7776038185693324,
+    0.2957058901665732,
+    0.5519378901226446,
+    0.4398710068780929
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 7,
+   "classId": "mastodonte",
+   "name": "Vieille Dette",
+   "side": "clans",
+   "pos": [
+    0,
+    0,
+    1350
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 3536,
+   "face": 140,
+   "subsystemHp": 320,
+   "cooldowns": [
+    0.8021092882845551,
+    0.44449537235777825,
+    1.4669191567227244,
+    0.3713003913871944,
+    1.3166693933308125,
+    0.28618756402283907,
+    0.21548607910517603
+   ],
+   "empAmmo": 1,
+   "hangarStock": 14,
+   "orionum": true
+  },
+  {
+   "id": 8,
+   "classId": "ruche",
+   "name": "Chienne de Garde",
+   "side": "clans",
+   "pos": [
+    160,
+    30,
+    1570
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 1081,
+   "face": 90,
+   "subsystemHp": 140,
+   "cooldowns": [
+    0.2319660452194512,
+    0.43642681965138763
+   ],
+   "empAmmo": 0,
+   "hangarStock": 56,
+   "orionum": false
+  },
+  {
+   "id": 9,
+   "classId": "ruche",
+   "name": "Marée Rouge",
+   "side": "clans",
+   "pos": [
+    -160,
+    -20,
+    1590
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 1081,
+   "face": 90,
+   "subsystemHp": 140,
+   "cooldowns": [
+    0.8218521473463625,
+    1.142810542602092
+   ],
+   "empAmmo": 0,
+   "hangarStock": 56,
+   "orionum": false
+  },
+  {
+   "id": 10,
+   "classId": "ecorcheur",
+   "name": "Sans-Merci",
+   "side": "clans",
+   "pos": [
+    260,
+    10,
+    1170
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 540,
+   "face": 60,
+   "subsystemHp": 70,
+   "cooldowns": [
+    0.11177713517099619,
+    1.3694110619835556,
+    0.8305661219637841
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 11,
+   "classId": "ecorcheur",
+   "name": "Dernier Mot",
+   "side": "clans",
+   "pos": [
+    -260,
+    -10,
+    1170
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 540,
+   "face": 60,
+   "subsystemHp": 70,
+   "cooldowns": [
+    0.9324372508563101,
+    1.0201363615924492,
+    1.4489845556672662
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 12,
+   "classId": "grele",
+   "name": "Croc",
+   "side": "clans",
+   "pos": [
+    -90,
+    0,
+    1470
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 624,
+   "face": 80,
+   "subsystemHp": 80,
+   "cooldowns": [
+    0.936570966267027,
+    1.3818072901340201,
+    1.2414427263429388
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  },
+  {
+   "id": 13,
+   "classId": "depot",
+   "name": "Tanière",
+   "side": "clans",
+   "pos": [
+    0,
+    -60,
+    1800
+   ],
+   "fwd": [
+    0,
+    0,
+    -1
+   ],
+   "hull": 9200,
+   "face": 300,
+   "subsystemHp": 400,
+   "cooldowns": [
+    0.05996771086938679,
+    0.2624123204732314,
+    0.5354715212015435,
+    0.6379735866794363,
+    0.030264171422459185
+   ],
+   "empAmmo": 0,
+   "hangarStock": -1,
+   "orionum": false
+  }
+ ],
+ "wells": [
+  {
+   "id": 1,
+   "name": "Charybde",
+   "pos": [
+    -760,
+    0,
+    -150
+   ],
+   "core": 150,
+   "pull": 520,
+   "reach": 1000
+  },
+  {
+   "id": 2,
+   "name": "Scylla",
+   "pos": [
+    780,
+    80,
+    520
+   ],
+   "core": 110,
+   "pull": 440,
+   "reach": 820
+  },
+  {
+   "id": 3,
+   "name": "Le Gué",
+   "pos": [
+    -480,
+    -60,
+    1320
+   ],
+   "core": 80,
+   "pull": 380,
+   "reach": 650
+  }
+ ],
+ "depotId": 13,
+ "rngNext": 0.08810623525641859
+}

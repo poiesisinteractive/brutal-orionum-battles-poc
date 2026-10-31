@@ -11,7 +11,8 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | Jalon | État |
 | --- | --- |
 | S0 Socle (solution, RNG bit à bit avec le TS) | ✅ |
-| S1 à S7 (monde, vol, combat, drones, Orionum, IA, parité) | à faire |
+| S1 Monde et données (stockage, déploiement identique au TS, clone, historique, grille spatiale) | ✅ |
+| S2 à S7 (vol, combat, drones, Orionum, IA, parité) | à faire |
 
 ## Prérequis
 

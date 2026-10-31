@@ -12,10 +12,11 @@ La sim du proto TS fait environ 5 500 lignes (`src/sim`, `src/ai`, `src/analysis
 
 ### Ce qu'on change
 1. **Des tables contiguës, pas un objet par entité.**
-   - **Coques** : les champs chauds (position, vitesse, nez, vitesse angulaire, `timeScale`, camp, drapeaux, coque, 6 faces de bouclier…) sont en tableaux parallèles (SoA). Les champs froids (armes, ordres, hangar, sous-systèmes) sont des structs à capacité fixe (`InlineArray`) indexés par slot.
-   - **Drones et projectiles** : un struct par entité (AoS), puisqu'on les parcourt entièrement à chaque tick.
+   - **Coques, drones et projectiles** : un struct blittable par entité, dans une table contiguë (`EntityTable<T>`), manipulé par `ref`. Les parties de taille variable du TS (faces, sous-systèmes, armes, file d'ordres) sont des tableaux à capacité fixe (`InlineArray`) dans le struct. Le code porté se lit donc presque comme le TS (`s.Faces[f]`, `s.Orders`).
+   - **Écart avec le plan initial** : on avait prévu de séparer les champs chauds et froids des coques en tableaux parallèles (SoA). On ne le fera que si le profilage de S7 le demande. À 1 000 coques, la table entière ne pèse que 1,5 Mo ; les drones et projectiles, bien plus nombreux, sont déjà des structs compacts.
+   - **Tableaux .NET plutôt que `NativeList` de BRUTAL** : avec `NativeList`, il faudrait libérer à la main chaque clone de l'analyse tactique, et un oubli fuit de la mémoire non managée. Des tableaux de structs blittables se copient aussi vite. À réévaluer avec les mesures de S7.
    - **Données statiques** (classes, armes, drones, scénario) : tables immuables référencées par index. Plus aucune chaîne de caractères dans la boucle.
-2. **Identité et ordre.** Les ids sont des entiers croissants. L'élagage compacte les tables en gardant l'ordre de création, comme le `prune` du TS. L'itération reste donc dans l'ordre des ids, et le résultat est déterministe.
+2. **Identité et ordre.** Les ids sont des entiers croissants ; 0 veut dire « aucun » partout où le TS a `null`. L'élagage compacte les tables en gardant l'ordre de création, comme le `prune` du TS, puis reconstruit la table id → slot (`IdMap`, adressage ouvert, que des tableaux d'entiers). L'itération reste donc dans l'ordre des ids, et le résultat est déterministe.
 3. **Grille spatiale.** Un hachage uniforme, reconstruit à chaque tick, répond aux requêtes de voisinage (ciblage, DCA, souffles, mines, évitement) à la place des boucles en O(n²) du TS.
 4. **Deux sortes de phases.**
    - **Séquentielles** : ordres, commandement de flotte, IA commandant, application des dégâts, apparitions.
@@ -35,7 +36,7 @@ Les lots 1 à 3 du proto (classes de soutien, objectifs, écran à crédits, ren
 | # | Jalon | Sources TS | Critère de fin |
 | --- | --- | --- | --- |
 | S0 | **Socle** ✅ | `rng.ts` | Dépôt, solution, RNG bit à bit (10 tests verts). |
-| S1 | **Monde et données** | `types.ts`, `data.ts`, `vec.ts`, `world.ts` (stockage, ids, événements, élagage, clone, historique) | La bataille *skirmish* du Raid se crée et se clone ; test de l'historique. |
+| S1 | **Monde et données** ✅ | `types.ts`, `data.ts`, `vec.ts`, `world.ts` (stockage, ids, événements, élagage, clone, historique) | Le monde construit est identique au TS (4 cas, RNG compris) ; clone, élagage, historique et grille spatiale testés (24 tests verts). |
 | S2 | **Vol et ordres** | `movement.ts`, `fleet.ts`, ordres de `world.ts` | Tests : vol newtonien, ordres, commandement de flotte. |
 | S3 | **Combat** | `combat.ts`, `projectiles.ts` | Tests : boucliers directionnels, règles de combat v0, lasers et bombes, destruction et bombe à énergie, distance de sécurité. |
 | S4 | **Drones et hangars** | `drones.ts` | Tests des drones (sous les boucliers, porteur détruit). |

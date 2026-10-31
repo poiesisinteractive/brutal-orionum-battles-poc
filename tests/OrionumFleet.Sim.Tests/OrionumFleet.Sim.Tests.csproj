@@ -19,4 +19,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Références générées par le proto TS (tools/ts-reference). -->
+  <ItemGroup>
+    <None Include="Reference\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
