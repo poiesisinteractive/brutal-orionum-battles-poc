@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OrionumFleet.Headless/OrionumFleet.Headless.csproj" />
+    <Project Path="src/OrionumFleet.Sim/OrionumFleet.Sim.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OrionumFleet.Sim.Tests/OrionumFleet.Sim.Tests.csproj" />
+  </Folder>
+</Solution>

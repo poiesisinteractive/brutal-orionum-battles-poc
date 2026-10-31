@@ -1,0 +1,21 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <!-- Builds reproductibles (même source = mêmes binaires). -->
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- Versions BRUTAL alignées sur les samples du dépôt BRUTAL (2026-10). -->
+  <PropertyGroup>
+    <BrutalCoreVersion>2026.10.1</BrutalCoreVersion>
+    <BrutalNumericsVersion>2026.10.1</BrutalNumericsVersion>
+    <BrutalCollectionsVersion>2026.10.1</BrutalCollectionsVersion>
+    <BrutalConcurrencyVersion>2026.10.1</BrutalConcurrencyVersion>
+  </PropertyGroup>
+
+</Project>

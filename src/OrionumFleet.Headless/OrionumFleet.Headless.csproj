@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Équivalent de `npm run sim` du proto TS : batailles IA contre IA en ligne de commande. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OrionumFleet.Headless</RootNamespace>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrionumFleet.Sim\OrionumFleet.Sim.csproj" />
+  </ItemGroup>
+
+</Project>

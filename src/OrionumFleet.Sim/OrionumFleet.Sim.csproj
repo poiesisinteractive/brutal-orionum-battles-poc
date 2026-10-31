@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Simulation pure : aucune dépendance au rendu, à l'UI ou à l'audio (headless, testable). -->
+  <PropertyGroup>
+    <RootNamespace>OrionumFleet.Sim</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Core" Version="$(BrutalCoreVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.Numerics" Version="$(BrutalNumericsVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.Collections" Version="$(BrutalCollectionsVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.Concurrency" Version="$(BrutalConcurrencyVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OrionumFleet.Sim.Tests" />
+  </ItemGroup>
+
+</Project>
