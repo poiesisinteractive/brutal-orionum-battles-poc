@@ -136,11 +136,14 @@ public struct OrderQueue
     }
 
     /// <summary>Retire l'ordre d'index donné en gardant l'ordre des suivants (<c>splice</c>).</summary>
-    public void RemoveAt(int index)
+    public void RemoveAt(int index) => RemoveRange(index, 1);
+
+    /// <summary>Retire <paramref name="count"/> ordres à partir de <paramref name="index"/> (<c>splice(index, count)</c>).</summary>
+    public void RemoveRange(int index, int count)
     {
         var span = AsSpan();
-        span[(index + 1)..].CopyTo(span[index..]);
-        _count--;
+        span[(index + count)..].CopyTo(span[index..]);
+        _count -= (byte)count;
     }
 }
 

@@ -10,13 +10,15 @@ public sealed partial class World
     {
         if (Result is not null)
             return;
-        Time += Dt;
+        Time += DtExact;
         Tick++;
 
-        // S2 : Fleet.Step (commandement de flotte). S5 : Orionum.Step, Terrain.Step.
+        FleetSystem.Step(this);
+        // S5 : Orionum.Step, Terrain.Step.
 
-        foreach (ref var s in Ships.AsSpan())
+        for (var i = 0; i < Ships.Count; i++)
         {
+            ref var s = ref Ships[i];
             if (!s.IsActive)
                 continue;
             if (s.TimeScale == 0)
@@ -26,7 +28,11 @@ public sealed partial class World
                 s.PrevFwd = s.Fwd;
                 continue;
             }
-            // S2 : processOrders, updateMovement (dt × timeScale). S3 : updateDefences.
+            var ldt = Dt * s.TimeScale;
+            Movement.ProcessOrders(this, ref s);
+            if (s.TowedBy == 0)
+                Movement.UpdateMovement(this, i, ldt);
+            // S3 : updateDefences.
         }
 
         // Lot 1 : supportStep. Lot 3 : reinforceStep.
@@ -35,7 +41,7 @@ public sealed partial class World
         // S3 : updateProjectile, updateDying.
 
         Prune();
-        RecordHistory(Dt);
+        RecordHistory(DtExact);
         CheckVictory();
     }
 

@@ -12,7 +12,8 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | --- | --- |
 | S0 Socle (solution, RNG bit à bit avec le TS) | ✅ |
 | S1 Monde et données (stockage, déploiement identique au TS, clone, historique, grille spatiale) | ✅ |
-| S2 à S7 (vol, combat, drones, Orionum, IA, parité) | à faire |
+| S2 Vol et ordres (vol newtonien, ordres, commandement de flotte, trajectoires comparées au TS) | ✅ |
+| S3 à S7 (combat, drones, Orionum, IA, parité) | à faire |
 
 ## Prérequis
 
@@ -26,6 +27,8 @@ dotnet build
 dotnet test
 dotnet run --project src/OrionumFleet.Headless
 ```
+
+En attendant le runner IA contre IA (S7), le runner headless joue une manœuvre scriptée : la Coalition prend le Mastodonte en tenailles, et la console affiche les positions toutes les 20 s.
 
 ## Structure
 

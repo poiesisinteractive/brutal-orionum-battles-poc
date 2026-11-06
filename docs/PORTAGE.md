@@ -37,7 +37,7 @@ Les lots 1 à 3 du proto (classes de soutien, objectifs, écran à crédits, ren
 | --- | --- | --- | --- |
 | S0 | **Socle** ✅ | `rng.ts` | Dépôt, solution, RNG bit à bit (10 tests verts). |
 | S1 | **Monde et données** ✅ | `types.ts`, `data.ts`, `vec.ts`, `world.ts` (stockage, ids, événements, élagage, clone, historique) | Le monde construit est identique au TS (4 cas, RNG compris) ; clone, élagage, historique et grille spatiale testés (24 tests verts). |
-| S2 | **Vol et ordres** | `movement.ts`, `fleet.ts`, ordres de `world.ts` | Tests : vol newtonien, ordres, commandement de flotte. |
+| S2 | **Vol et ordres** ✅ | `movement.ts`, `fleet.ts`, ordres de `world.ts` | Tests portés (ordres, vol newtonien, distance de sécurité, commandement de flotte) et 5 trajectoires comparées au TS à moins de 0,4 u près (39 tests verts). |
 | S3 | **Combat** | `combat.ts`, `projectiles.ts` | Tests : boucliers directionnels, règles de combat v0, lasers et bombes, destruction et bombe à énergie, distance de sécurité. |
 | S4 | **Drones et hangars** | `drones.ts` | Tests des drones (sous les boucliers, porteur détruit). |
 | S5 | **Orionum** | `orionum.ts`, `terrain.ts` | Tests : instabilité et Horloge, puits, tir courbe, fronde, élan, piliers. |
@@ -45,6 +45,14 @@ Les lots 1 à 3 du proto (classes de soutien, objectifs, écran à crédits, ren
 | S7 | **Headless, parité, performance** | `headless.ts` | Mêmes statistiques que `npm run sim`, parité dans les tolérances, banc d'échelle. |
 
 Le périmètre couvre environ 44 des 63 tests TS. Les autres concernent les lots 1 à 3.
+
+### Notes de S2
+- **Tests adaptés à l'Escarmouche.** Les tests TS construisent `new World(1)`, donc le préréglage « Bataille » du lot 1. Ici, c'est l'Escarmouche : on n'attend par exemple que 3 groupes (Ligne, Lanciers, Hangar) au lieu de 5.
+- **Le rejeu d'un clone** est testé avec des ordres scriptés. Sa version avec l'IA, et les tests de déterminisme, attendent S6.
+- **Horloges globales en double.** Le temps de bataille, l'historique et le commandement de flotte accumulent le pas exact du TS (1/20 en double). En float, l'historique prendrait ses instantanés un pas plus tôt que le proto.
+- **Demi-tours.** Quand une coque doit pivoter de 180° pile, le sens de rotation dépend du bruit d'arrondi (produit vectoriel quasi nul). Le TS et le C# peuvent tourner chacun d'un côté : les deux trajectoires sont symétriques et équivalentes. Le test de trajectoire du capital compare donc au miroir près.
+- **Boucles en O(n²) gardées.** La menace la plus proche, la distance de sécurité et la séparation parcourent toutes les coques, comme le TS. Le passage à la grille spatiale se fera en S7, mesures à l'appui.
+- **Lot 1 laissé de côté** : l'accrochage du remorqueur (`tryHook`). L'ordre `tow` sait seulement ramener une coque déjà accrochée.
 
 ## Validation
 

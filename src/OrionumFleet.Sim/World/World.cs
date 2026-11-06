@@ -23,6 +23,13 @@ public sealed partial class World
 {
     public const float Dt = GameData.Tuning.Dt;
 
+    /// <summary>
+    /// Le même pas en double, exactement celui du TS (1/20). Les horloges globales (temps de bataille,
+    /// historique, commandement de flotte) l'accumulent pour tomber sur les mêmes pas que le proto :
+    /// en float, l'historique prendrait ses instantanés un pas plus tôt.
+    /// </summary>
+    public const double DtExact = 1.0 / 20;
+
     public uint Seed { get; }
     public ScenarioDef Scenario { get; private set; }
     public Pillars Pillars { get; private set; }
@@ -78,7 +85,7 @@ public sealed partial class World
             options.Clans ?? GameData.SkirmishClans
         );
         Terrain.CreateWells(this);
-        // S2 : createFleet (commandement de flotte) pour chaque camp.
+        Fleets = [FleetSystem.CreateFleet(this, Side.Coalition), FleetSystem.CreateFleet(this, Side.Clans)];
     }
 
     World(World source)
@@ -106,6 +113,7 @@ public sealed partial class World
         _history = (Snapshot[])source._history.Clone();
         _historyHead = (int[])source._historyHead.Clone();
         _historyCount = (int[])source._historyCount.Clone();
+        Fleets = Array.ConvertAll(source.Fleets, f => f.Clone());
     }
 
     /// <summary>

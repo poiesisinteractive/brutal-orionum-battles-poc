@@ -22,3 +22,13 @@ npx tsx dump-setup.ts 7 wolf359-raid on > setup-raid-7.json
 npx tsx dump-setup.ts 3 well-field on > setup-wellfield-3.json
 npx tsx dump-setup.ts 5 wolf359-raid off > setup-raid-5-noterrain.json
 ```
+
+## Régénérer les références de S2
+
+Copier `dump-flight.ts` dans `<dossier>/fleet-proto`, puis :
+
+```sh
+npx tsx dump-flight.ts > flight.json
+```
+
+Il joue cinq manœuvres scriptées, sans tir : déplacement d'un capital, repli combatif d'une frégate, Lanciers en ligne, escorte et passe balistique, tenailles. Il échantillonne positions et nez chaque seconde.

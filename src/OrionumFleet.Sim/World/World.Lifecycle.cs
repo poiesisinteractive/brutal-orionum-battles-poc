@@ -199,7 +199,7 @@ public sealed partial class World
     }
 
     /// <summary>Un instantané par coque active toutes les 0,5 s, sur 10 s (fenêtre rétroactive).</summary>
-    internal void RecordHistory(float dt)
+    internal void RecordHistory(double dt)
     {
         _historyClock += dt;
         if (_historyClock < GameData.Tuning.HistoryInterval)
