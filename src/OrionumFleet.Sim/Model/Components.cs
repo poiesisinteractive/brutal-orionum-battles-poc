@@ -13,11 +13,15 @@ public record struct SubsystemState(float Hp, float Max, bool Offline);
 public struct WeaponState
 {
     public byte DefIndex;
-    public float Cooldown;
+    /// <summary>
+    /// En double, vidée du pas exact : en float, une recharge de 2 s vidée par pas de 0,05 s garde un résidu
+    /// positif après 40 pas et le tir part un pas trop tard (2,05 s au lieu de 2 s, décalage cumulé).
+    /// </summary>
+    public double Cooldown;
     public int TargetId;
     /// <summary>Terrain : une cible que la conduite de tir vient de trouver cachée derrière un cœur (ignorée jusqu'à <see cref="BlockedUntil"/>).</summary>
     public int BlockedId;
-    public float BlockedUntil;
+    public double BlockedUntil;
 }
 
 public struct HangarState

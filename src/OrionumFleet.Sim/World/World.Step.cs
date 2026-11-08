@@ -32,13 +32,23 @@ public sealed partial class World
             Movement.ProcessOrders(this, ref s);
             if (s.TowedBy == 0)
                 Movement.UpdateMovement(this, i, ldt);
-            // S3 : updateDefences.
+            Combat.UpdateDefences(ref Ships[i], ldt);
         }
 
         // Lot 1 : supportStep. Lot 3 : reinforceStep.
-        // S3 : fireWeapons pour chaque coque active.
+        for (var i = 0; i < Ships.Count; i++)
+            if (Ships[i].IsActive)
+                Combat.FireWeapons(this, i, DtExact * Ships[i].TimeScale);
+
         // S4 : updateHangars, updateDrone.
-        // S3 : updateProjectile, updateDying.
+
+        // Les projectiles tirés pendant ce pas sont avancés dès ce pas, comme dans le TS.
+        for (var i = 0; i < Projectiles.Count; i++)
+            if (Projectiles[i].Alive)
+                ProjectileSystem.UpdateProjectile(this, i, Dt * Projectiles[i].TimeScale);
+        for (var i = 0; i < Ships.Count; i++)
+            if (Ships[i].Alive && Ships[i].Dying is not null)
+                UpdateDying(i, Dt * Ships[i].TimeScale);
 
         Prune();
         RecordHistory(DtExact);

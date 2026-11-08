@@ -127,6 +127,57 @@ public sealed partial class World
         Emit(new SimEvent { Type = SimEventType.ShipCrippled, ShipId = s.Id, At = s.Pos, OtherId = by, Value = s.Dying.Value });
     }
 
+    /// <summary>Agonie : la coque dérive en vrille, avec des explosions secondaires de plus en plus rapprochées.</summary>
+    internal void UpdateDying(int shipIndex, float dt)
+    {
+        ref var s = ref Ships[shipIndex];
+        var radius = s.Class.Radius;
+        s.PrevPos = s.Pos;
+        s.PrevFwd = s.Fwd;
+        s.Pos += Vec.Scale(s.Vel, dt);
+        var spin = Vec.Len(s.AngVel);
+        if (spin > 1e-6f)
+            s.Fwd = Vec.Normalize(Vec.RotateAxis(s.Fwd, Vec.Scale(s.AngVel, 1 / spin), spin * dt));
+        s.Dying -= dt;
+
+        // Explosions secondaires en chaîne, plus fréquentes vers la fin ; certaines arrachent une pièce.
+        var progress = 1 - s.Dying!.Value / s.DyingTotal;
+        if (Rng.Chance(dt * (1.5f + 4 * progress)))
+        {
+            var at = s.Pos + Vec.Scale(Rng.Unit(), radius * Rng.Range(0.3f, 0.9f));
+            var size = radius * Rng.Range(0.25f, 0.6f);
+            var tear = Rng.Chance(0.3f);
+            Emit(new SimEvent { Type = SimEventType.Secondary, ShipId = s.Id, At = at, Value = size, Tear = tear });
+        }
+        if (s.Dying <= 0)
+            CoreBreach(shipIndex);
+    }
+
+    /// <summary>Le réacteur lâche : un souffle de zone qui n'épargne personne (alliés compris), puis la coque se disloque.</summary>
+    void CoreBreach(int shipIndex)
+    {
+        ref var s = ref Ships[shipIndex];
+        var radius = CombatRules.BreachRadius(s.Class.Radius);
+        var damage = CombatRules.BreachDamage(s.Class.Radius);
+        var pos = s.Pos;
+        Emit(new SimEvent { Type = SimEventType.CoreBreach, ShipId = s.Id, At = pos, Value = radius, Side = s.Side });
+        for (var i = 0; i < Ships.Count; i++)
+        {
+            ref readonly var o = ref Ships[i];
+            if (i == shipIndex || !o.IsActive)
+                continue;
+            var d = MathF.Max(0, Vec.Dist(o.Pos, pos) - o.Class.Radius);
+            if (d > radius)
+                continue;
+            var from = Vec.LenSq(pos - o.Pos) > 1e-6f ? Vec.Normalize(pos - o.Pos) : o.Fwd;
+            Combat.ApplyDamage(this, i, damage * (1 - 0.75f * (d / radius)), from, null, 0, new DamageProfile(Pierce: 0.3f));
+        }
+        foreach (ref var d in Drones.AsSpan())
+            if (d.Alive && Vec.Dist(d.Pos, pos) <= radius)
+                DamageDrone(ref d, 1e3f);
+        DestroyShip(shipIndex, Ships[shipIndex].KillerId);
+    }
+
     public void DestroyShip(int shipIndex, int by)
     {
         ref var s = ref Ships[shipIndex];

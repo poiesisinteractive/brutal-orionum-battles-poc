@@ -38,9 +38,10 @@ Les lots 1 à 3 du proto (classes de soutien, objectifs, écran à crédits, ren
 | S0 | **Socle** ✅ | `rng.ts` | Dépôt, solution, RNG bit à bit (10 tests verts). |
 | S1 | **Monde et données** ✅ | `types.ts`, `data.ts`, `vec.ts`, `world.ts` (stockage, ids, événements, élagage, clone, historique) | Le monde construit est identique au TS (4 cas, RNG compris) ; clone, élagage, historique et grille spatiale testés (24 tests verts). |
 | S2 | **Vol et ordres** ✅ | `movement.ts`, `fleet.ts`, ordres de `world.ts` | Tests portés (ordres, vol newtonien, distance de sécurité, commandement de flotte) et 5 trajectoires comparées au TS à moins de 0,4 u près (39 tests verts). |
-| S3 | **Combat** | `combat.ts`, `projectiles.ts` | Tests : boucliers directionnels, règles de combat v0, lasers et bombes, destruction et bombe à énergie, distance de sécurité. |
+| S3 | **Combat** ✅ | `combat.ts`, `projectiles.ts`, balistique de `terrain.ts` | Tests portés (boucliers directionnels, règles de combat, lasers et bombes, destruction et bombe à énergie, puits et tir courbe) et 70 batailles scriptées comparées au TS en statistiques, sur le Raid et le Champ de puits (58 tests verts). |
+| V0 | **Visualiseur** | rendu de Brutal Arena | Vue de débug OpenGL + ImGui branchée sur la sim : coques, tirs, puits, pause et vitesse. Intercalé pour voir la sim tourner avant S4. |
 | S4 | **Drones et hangars** | `drones.ts` | Tests des drones (sous les boucliers, porteur détruit). |
-| S5 | **Orionum** | `orionum.ts`, `terrain.ts` | Tests : instabilité et Horloge, puits, tir courbe, fronde, élan, piliers. |
+| S5 | **Orionum** | `orionum.ts`, reste de `terrain.ts` | Tests : instabilité et Horloge, fronde, élan, piliers. |
 | S6 | **IA et analyse** | `ai/ai.ts`, `orionumAi.ts`, `terrainAi.ts`, `analysis/analysis.ts` | Tests : déterminisme, bataille IA contre IA, projection, limites de l'officier. |
 | S7 | **Headless, parité, performance** | `headless.ts` | Mêmes statistiques que `npm run sim`, parité dans les tolérances, banc d'échelle. |
 
@@ -53,6 +54,12 @@ Le périmètre couvre environ 44 des 63 tests TS. Les autres concernent les lots
 - **Demi-tours.** Quand une coque doit pivoter de 180° pile, le sens de rotation dépend du bruit d'arrondi (produit vectoriel quasi nul). Le TS et le C# peuvent tourner chacun d'un côté : les deux trajectoires sont symétriques et équivalentes. Le test de trajectoire du capital compare donc au miroir près.
 - **Boucles en O(n²) gardées.** La menace la plus proche, la distance de sécurité et la séparation parcourent toutes les coques, comme le TS. Le passage à la grille spatiale se fera en S7, mesures à l'appui.
 - **Lot 1 laissé de côté** : l'accrochage du remorqueur (`tryHook`). L'ordre `tow` sait seulement ramener une coque déjà accrochée.
+
+### Notes de S3
+- **Parité du combat en statistiques.** `tools/ts-reference/dump-combat.ts` joue des batailles scriptées sans IA et hangars vides (drones en S4) : le Raid (40 graines, les deux flottes en ciblage automatique, 180 s) et le Champ de puits (30 graines, la Coalition en tir courbe sur la Tanière, 240 s). `CombatParityTests` compare 20 métriques (dégâts, pertes, coque restante, tirs et coups par arme, bombes, tirs bloqués et courbes, projectiles avalés) à trois erreurs types près, plus un plancher de 2 %.
+- **Recharges des armes en double.** En float, une recharge de 2 s vidée par pas de 0,05 s garde un résidu positif après 40 pas : le tir partait un pas trop tard (cadence de 2,05 s). Le décalage changeait la géométrie des tirs de la Tanière et divisait par 2,5 les obus avalés par Le Voile et Scylla. Les recharges sont donc en double et vidées de `World.DtExact`, comme les horloges globales. Les autres minuteries (hangars, drones) seront vérifiées de la même façon en S4.
+- **Les rayons et les cœurs.** Comme dans le TS, la conduite de tir n'engage pas au rayon une cible masquée par un cœur (`lineBlocked`) : le test TS « beams stop at a core » passe donc sans tir. La coupure du rayon au bord du cœur ne sert qu'aux cibles qui le frôlent.
+- **Lot 1 laissé de côté** : les mines (le vol d'une mine est porté, pas sa pose) et le brouilleur.
 
 ## Validation
 
