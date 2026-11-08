@@ -14,7 +14,7 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | S1 Monde et données (stockage, déploiement identique au TS, clone, historique, grille spatiale) | ✅ |
 | S2 Vol et ordres (vol newtonien, ordres, commandement de flotte, trajectoires comparées au TS) | ✅ |
 | S3 Combat (armes, boucliers, sous-systèmes, bombes, balistique à travers les puits, batailles comparées au TS) | ✅ |
-| V0 Visualiseur de débug (OpenGL + ImGui) | en cours |
+| V0 Visualiseur de débug (OpenGL HDR + bloom, ImGui) | ✅ |
 | S4 à S7 (drones, Orionum, IA, parité) | à faire |
 
 ## Prérequis
@@ -28,15 +28,41 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 dotnet build
 dotnet test
 dotnet run --project src/OrionumFleet.Headless
+dotnet run --project src/OrionumFleet.Viewer -c Release
 ```
 
 En attendant le runner IA contre IA (S7), le runner headless joue une manœuvre scriptée : la Coalition prend le Mastodonte en tenailles, et la console affiche les positions toutes les 20 s.
+
+### Visualiseur
+
+Le visualiseur fait tourner la sim en direct et la dessine avec le rendu de Brutal Arena : HDR, bloom et lumières ponctuelles. Les formes restent simples : un pavé orienté par coque, une sphère noire cerclée de violet par cœur de puits, des traits lumineux pour les tirs. Ce n'est pas la direction artistique du jeu.
+
+- **Batailles scriptées**, sans IA (S6) ni drones (S4) :
+  - le Raid en engagement général ;
+  - le Champ de puits, avec la Coalition en tir courbe sur la Tanière ;
+  - les tenailles sur le Mastodonte.
+- **Contrôles** :
+  - Espace : pause.
+  - `.` : un pas de sim.
+  - `+` et `-` : vitesse de ×1/8 à ×32.
+  - R : relancer.
+  - F : suivre la mêlée.
+  - F1 : afficher ou masquer le panneau.
+  - Clic gauche : tourner.
+  - Clic droit : déplacer.
+  - Molette : zoomer.
+- **Capture sans écran**, utile pour vérifier un rendu : la commande ci-dessous avance la sim à pleine vitesse jusqu'à 90 s, enregistre une image puis quitte.
+
+  ```sh
+  dotnet run --project src/OrionumFleet.Viewer -c Release -- --scenario 1 --seed 3 --at 90 --capture shot.png
+  ```
 
 ## Structure
 
 ```text
 src/OrionumFleet.Sim/        simulation pure : aucune dépendance au rendu
 src/OrionumFleet.Headless/   runner IA contre IA (équivalent de `npm run sim`)
+src/OrionumFleet.Viewer/     visualiseur de débug (GLFW, OpenGL, ImGui), rendu repris de Brutal Arena
 tests/OrionumFleet.Sim.Tests tests portés du proto TS
 docs/                        concept, décisions, plan de portage
 ```

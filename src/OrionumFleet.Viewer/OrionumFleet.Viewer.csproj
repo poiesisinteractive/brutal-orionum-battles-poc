@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Visualiseur de débug : la sim tourne en direct, rendue en OpenGL (HDR + bloom de Brutal Arena), pilotée en ImGui. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OrionumFleet.Viewer</RootNamespace>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrionumFleet.Sim\OrionumFleet.Sim.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Core" Version="$(BrutalCoreVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.Numerics" Version="$(BrutalNumericsVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.Glfw" Version="$(BrutalGlfwVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.OpenGl" Version="$(BrutalOpenGlVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.ImGui" Version="$(BrutalImGuiVersion)" />
+    <PackageReference Include="Ahwoo.Brutal.ImGui.Backends" Version="$(BrutalImGuiVersion)" />
+  </ItemGroup>
+
+</Project>

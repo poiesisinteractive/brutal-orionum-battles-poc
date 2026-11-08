@@ -16,6 +16,10 @@
     <BrutalNumericsVersion>2026.10.1</BrutalNumericsVersion>
     <BrutalCollectionsVersion>2026.10.1</BrutalCollectionsVersion>
     <BrutalConcurrencyVersion>2026.10.1</BrutalConcurrencyVersion>
+    <!-- Visualiseur (fenêtre, OpenGL, UI) : mêmes versions que Brutal Arena. -->
+    <BrutalGlfwVersion>2026.10.4</BrutalGlfwVersion>
+    <BrutalOpenGlVersion>2026.10.1</BrutalOpenGlVersion>
+    <BrutalImGuiVersion>2026.10.2</BrutalImGuiVersion>
   </PropertyGroup>
 
 </Project>
