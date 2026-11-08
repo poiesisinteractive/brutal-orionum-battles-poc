@@ -213,8 +213,13 @@ sealed class Viewer : IDisposable
         switch (e.Type)
         {
             case SimEventType.Beam:
-                var beamColor = e.Beam == BeamKind.Pd ? glow * 1.5f : glow * 5f;
-                AddEffect(e.Type, e.Beam == BeamKind.Pd ? 0.08f : 0.3f, e.At, e.Vector, 0, beamColor);
+                var (beamColor, beamLife) = e.Beam switch
+                {
+                    BeamKind.Turbolaser => (glow * 5f, 0.3f),
+                    BeamKind.Drone => (glow * 2.5f, 0.1f),
+                    _ => (glow * 1.5f, 0.08f),
+                };
+                AddEffect(e.Type, beamLife, e.At, e.Vector, 0, beamColor);
                 break;
             case SimEventType.Explosion:
                 AddEffect(e.Type, 0.7f, e.At, default, MathF.Max(6, e.Value * 2.5f), new float3(1f, 0.6f, 0.25f));
@@ -354,6 +359,7 @@ sealed class Viewer : IDisposable
             DrawGrid();
         DrawWells();
         DrawShips();
+        DrawDrones();
         DrawProjectiles();
         DrawEffects();
 
@@ -445,6 +451,27 @@ sealed class Viewer : IDisposable
                 var flicker = 0.5f + 0.5f * MathF.Sin((float)_world.Time * 23 + s.Id);
                 _renderer.DrawSphere(s.Pos, r * 0.3f, new float3(1f, 0.45f, 0.15f), 3 + 5 * flicker);
             }
+        }
+    }
+
+    /// <summary>
+    /// Drones : petite flèche émissive dans l'axe du vol, avec une traînée. Les intercepteurs sont plus clairs ;
+    /// un drone orphelin (porteur perdu) s'éteint peu à peu.
+    /// </summary>
+    void DrawDrones()
+    {
+        foreach (ref readonly var d in _world.Drones.AsSpan())
+        {
+            if (!d.Alive)
+                continue;
+            var glow = d.Side == Side.Coalition ? CoalitionGlow : ClansGlow;
+            var interceptor = d.Role == DroneRole.Interceptor;
+            var power = d.OrphanTime > 0 ? 0.6f : interceptor ? 3.5f : 2.2f;
+            var color = interceptor ? float3.Lerp(glow, new float3(1, 1, 1), 0.45f) : glow;
+            var fwd = Vec.LenSq(d.Fwd) > 1e-6f ? Vec.Normalize(d.Fwd) : float3.UnitZ;
+            var up = MathF.Abs(fwd.Y) > 0.98f ? float3.UnitX : float3.UnitY;
+            _renderer.DrawBox(float4x4.CreateScale(2.2f, 1.2f, 5f) * float4x4.CreateWorld(d.Pos, fwd, up), color, power);
+            _renderer.Line(d.Pos - Vec.Scale(d.Vel, 0.12f), d.Pos, new float3(0, 0, 0), color * (power * 0.4f));
         }
     }
 
@@ -587,7 +614,13 @@ sealed class Viewer : IDisposable
                 var color = side == Side.Coalition ? new float4(0.55f, 0.75f, 1f, 1f) : new float4(1f, 0.6f, 0.35f, 1f);
                 ImGui.TextColored(color, $"{(side == Side.Coalition ? "Coalition" : "Clans")} : {active}/{total} coques, coque {100 * hull / MathF.Max(1, hullMax):F0} %%");
             }
-            ImGui.Text($"Projectiles en vol {w.Projectiles.Count}   avalés {w.Stats.Swallowed}   tirs courbes {w.Stats.ArcShots.Coalition + w.Stats.ArcShots.Clans}   bombes {w.Stats.BombsDetonated}");
+            ImGui.Text($"Projectiles en vol {w.Projectiles.Count}   avalés {w.Stats.Swallowed}   tirs courbes {w.Stats.ArcShots.Coalition + w.Stats.ArcShots.Clans}   bombes {w.Stats.BombsDetonated} (interceptées {w.Stats.BombsIntercepted})");
+            var dronesAlive = 0;
+            foreach (ref readonly var d in w.Drones.AsSpan())
+                if (d.Alive)
+                    dronesAlive++;
+            ImGui.Text($"Drones en vol {dronesAlive}   lancés {w.Stats.DronesLaunched}   abattus par la DCA {w.Stats.DronesLostToPd}");
+            ImGui.Text($"Frappes de drones {w.Stats.DroneShipHits}   duels {w.Stats.DroneDroneShots}   sous-systèmes détruits {w.Stats.DroneSubsystemKills}");
 
             if (ImGui.CollapsingHeader("Coques"u8, ImGuiTreeNodeFlags.DefaultOpen))
             {

@@ -1,11 +1,12 @@
-// Référence S3 : batailles scriptées sans IA, pour comparer le combat en statistiques. Hangars vides
-// (les drones arrivent en S4). Deux scénarios :
-//  - raid  : Raid sur Wolf 359, les deux flottes engagées par le commandement de flotte (tous les groupes,
-//            ciblage automatique), 180 s ;
-//  - wells : Champ de puits, la Coalition en tir courbe attaque la Tanière (masquée par un puits depuis le
-//            sud), les Clans défendent en ciblage automatique, 240 s. Il éprouve la balistique du Terrain.
+// Référence S3/S4 : batailles scriptées sans IA, pour comparer le combat en statistiques. Trois scénarios :
+//  - raid        : Raid sur Wolf 359, hangars vides, les deux flottes engagées par le commandement de flotte
+//                  (tous les groupes, ciblage automatique), 180 s ;
+//  - wells       : Champ de puits, hangars vides, la Coalition en tir courbe attaque la Tanière (masquée par
+//                  un puits depuis le sud), les Clans défendent en ciblage automatique, 240 s. Il éprouve la
+//                  balistique du Terrain ;
+//  - raid-drones : le raid, hangars pleins (S4) : lancements, passes d'attaque, interception.
 // À lancer depuis une copie de fleet-proto au commit 3eae78c :
-//   npx tsx dump-combat.ts <graines> <raid|wells> > combat-<scénario>.json
+//   npx tsx dump-combat.ts <graines> <raid|wells|raid-drones> > combat-<scénario>.json
 import { commandGroup } from './src/sim/fleet';
 import { isActive } from './src/sim/combat';
 import { World } from './src/sim/world';
@@ -18,7 +19,7 @@ const battles = [];
 
 for (let seed = 1; seed <= seeds; seed++) {
   const w = new World(seed, { fleetSize: 'skirmish', scenario: scenario === 'wells' ? 'well-field' : 'wolf359-raid' });
-  for (const s of w.ships) if (s.hangar) s.hangar.stock = 0;
+  if (scenario !== 'raid-drones') for (const s of w.ships) if (s.hangar) s.hangar.stock = 0;
   if (scenario === 'wells') {
     for (const s of w.ships) if (s.side === 'coalition') w.setArcFire(s.id, true);
     for (const g of w.fleets.coalition.groups) commandGroup(w.fleets.coalition, g, { targetId: w.depotId });
@@ -51,6 +52,12 @@ for (let seed = 1; seed <= seeds; seed++) {
     blockedShots: w.stats.blockedShots,
     arcShots: w.stats.arcShots.coalition + w.stats.arcShots.clans,
     swallowed: w.stats.swallowed,
+    dronesLaunched: w.stats.dronesLaunched,
+    droneShipHits: w.stats.droneShipHits,
+    droneDroneShots: w.stats.droneDroneShots,
+    droneSubsystemKills: w.stats.droneSubsystemKills,
+    dronesLostToPd: w.stats.dronesLostToPd,
+    dronesAlive: w.drones.filter((d) => d.alive).length,
   });
 }
 

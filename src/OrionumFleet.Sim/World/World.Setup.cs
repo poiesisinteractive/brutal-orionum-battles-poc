@@ -121,7 +121,7 @@ public sealed partial class World
         ((Span<float>)ship.Faces).Fill(cls.ShieldFace);
         ((Span<SubsystemState>)ship.Subsystems).Fill(new SubsystemState(cls.SubsystemHp, cls.SubsystemHp, false));
         for (var w = 0; w < cls.Weapons.Length; w++)
-            ship.Weapons[w] = new WeaponState { DefIndex = (byte)w, Cooldown = Rng.Range(0, 1.5f) };
+            ship.Weapons[w] = new WeaponState { DefIndex = (byte)w, Cooldown = 1.5 * Rng.NextDouble() }; // range(0, 1.5) du TS, en double
         if (cls.Hangar is { } hangar)
             ship.Hangar = new HangarState { Stock = hangar.Stock, Cooldown = 0, Mode = HangarMode.Attack };
 

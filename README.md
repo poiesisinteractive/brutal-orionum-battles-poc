@@ -15,7 +15,8 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | S2 Vol et ordres (vol newtonien, ordres, commandement de flotte, trajectoires comparées au TS) | ✅ |
 | S3 Combat (armes, boucliers, sous-systèmes, bombes, balistique à travers les puits, batailles comparées au TS) | ✅ |
 | V0 Visualiseur de débug (OpenGL HDR + bloom, ImGui) | ✅ |
-| S4 à S7 (drones, Orionum, IA, parité) | à faire |
+| S4 Drones et hangars (vagues, passes d'attaque, interception, essaims comparés au TS) | ✅ |
+| S5 à S7 (Orionum, IA, parité et performance) | à faire |
 
 ## Prérequis
 
@@ -37,7 +38,7 @@ En attendant le runner IA contre IA (S7), le runner headless joue une manœuvre 
 
 Le visualiseur fait tourner la sim en direct et la dessine avec le rendu de Brutal Arena : HDR, bloom et lumières ponctuelles. Les formes restent simples : un pavé orienté par coque, une sphère noire cerclée de violet par cœur de puits, des traits lumineux pour les tirs. Ce n'est pas la direction artistique du jeu.
 
-- **Batailles scriptées**, sans IA (S6) ni drones (S4) :
+- **Batailles scriptées**, sans IA (S6), hangars pleins :
   - le Raid en engagement général ;
   - le Champ de puits, avec la Coalition en tir courbe sur la Tanière ;
   - les tenailles sur le Mastodonte.

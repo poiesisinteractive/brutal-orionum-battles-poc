@@ -3,8 +3,7 @@ using OrionumFleet.Sim;
 namespace OrionumFleet.Viewer;
 
 /// <summary>
-/// Batailles scriptées jouables dans le visualiseur, en attendant l'IA (S6). Hangars vides : les drones
-/// arrivent en S4.
+/// Batailles scriptées jouables dans le visualiseur, en attendant l'IA (S6). Les hangars sont pleins (S4).
 /// </summary>
 static class Scenarios
 {
@@ -18,8 +17,6 @@ static class Scenarios
     public static World Create(int index, uint seed)
     {
         var w = new World(seed, new WorldOptions { Scenario = index == 1 ? ScenarioId.WellField : ScenarioId.Wolf359Raid });
-        foreach (ref var s in w.Ships.AsSpan())
-            s.Hangar.Stock = 0;
 
         switch (index)
         {

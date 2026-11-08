@@ -2,6 +2,9 @@ namespace OrionumFleet.Sim;
 
 public sealed partial class World
 {
+    /// <summary>Tampon réutilisé à chaque pas : drones vivants par id de porteur.</summary>
+    readonly Dictionary<int, int> _activeByCarrier = [];
+
     /// <summary>
     /// Un pas fixe de simulation (port de <c>World.step</c>). Les phases sont appelées dans l'ordre du TS ;
     /// celles qui ne sont pas encore portées sont marquées par leur jalon (voir docs/PORTAGE.md).
@@ -40,7 +43,15 @@ public sealed partial class World
             if (Ships[i].IsActive)
                 Combat.FireWeapons(this, i, DtExact * Ships[i].TimeScale);
 
-        // S4 : updateHangars, updateDrone.
+        _activeByCarrier.Clear();
+        foreach (ref readonly var d in Drones.AsSpan())
+            if (d.Alive)
+                _activeByCarrier[d.CarrierId] = _activeByCarrier.GetValueOrDefault(d.CarrierId) + 1;
+        DroneSystem.UpdateHangars(this, DtExact, _activeByCarrier);
+        // Les drones lancés pendant ce pas volent dès ce pas, comme dans le TS.
+        for (var i = 0; i < Drones.Count; i++)
+            if (Drones[i].Alive)
+                DroneSystem.UpdateDrone(this, i, DtExact * Drones[i].TimeScale);
 
         // Les projectiles tirés pendant ce pas sont avancés dès ce pas, comme dans le TS.
         for (var i = 0; i < Projectiles.Count; i++)

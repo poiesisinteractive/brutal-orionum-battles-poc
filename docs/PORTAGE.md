@@ -40,7 +40,7 @@ Les lots 1 à 3 du proto (classes de soutien, objectifs, écran à crédits, ren
 | S2 | **Vol et ordres** ✅ | `movement.ts`, `fleet.ts`, ordres de `world.ts` | Tests portés (ordres, vol newtonien, distance de sécurité, commandement de flotte) et 5 trajectoires comparées au TS à moins de 0,4 u près (39 tests verts). |
 | S3 | **Combat** ✅ | `combat.ts`, `projectiles.ts`, balistique de `terrain.ts` | Tests portés (boucliers directionnels, règles de combat, lasers et bombes, destruction et bombe à énergie, puits et tir courbe) et 70 batailles scriptées comparées au TS en statistiques, sur le Raid et le Champ de puits (58 tests verts). |
 | V0 | **Visualiseur** ✅ | rendu de Brutal Arena | Vue de débug OpenGL + ImGui branchée sur la sim : coques, tirs, effets des événements, puits, pause, vitesse et capture PNG. Intercalé pour voir la sim tourner avant S4. |
-| S4 | **Drones et hangars** | `drones.ts` | Tests des drones (sous les boucliers, porteur détruit). |
+| S4 | **Drones et hangars** ✅ | `drones.ts` | Tests portés et propres (porteur détruit, vagues, réserve, écran des intercepteurs, passes d'attaque) et 100 raids avec hangars pleins comparés au TS en statistiques (64 tests verts). |
 | S5 | **Orionum** | `orionum.ts`, reste de `terrain.ts` | Tests : instabilité et Horloge, fronde, élan, piliers. |
 | S6 | **IA et analyse** | `ai/ai.ts`, `orionumAi.ts`, `terrainAi.ts`, `analysis/analysis.ts` | Tests : déterminisme, bataille IA contre IA, projection, limites de l'officier. |
 | S7 | **Headless, parité, performance** | `headless.ts` | Mêmes statistiques que `npm run sim`, parité dans les tolérances, banc d'échelle. |
@@ -60,6 +60,12 @@ Le périmètre couvre environ 44 des 63 tests TS. Les autres concernent les lots
 - **Recharges des armes en double.** En float, une recharge de 2 s vidée par pas de 0,05 s garde un résidu positif après 40 pas : le tir partait un pas trop tard (cadence de 2,05 s). Le décalage changeait la géométrie des tirs de la Tanière et divisait par 2,5 les obus avalés par Le Voile et Scylla. Les recharges sont donc en double et vidées de `World.DtExact`, comme les horloges globales. Les autres minuteries (hangars, drones) seront vérifiées de la même façon en S4.
 - **Les rayons et les cœurs.** Comme dans le TS, la conduite de tir n'engage pas au rayon une cible masquée par un cœur (`lineBlocked`) : le test TS « beams stop at a core » passe donc sans tir. La coupure du rayon au bord du cœur ne sert qu'aux cibles qui le frôlent.
 - **Lot 1 laissé de côté** : les mines (le vol d'une mine est porté, pas sa pose) et le brouilleur.
+
+### Notes de S4
+- **Minuteries en double.** Recharges des hangars, tirs, reciblage et vie orpheline des drones sont en double et vidés du pas exact. Les recharges tirées au déploiement le sont aussi (`1.5 * NextDouble()`) : elles égalent le TS au bit près.
+- **Parité.** Graine par graine, le C# et le TS restent identiques, RNG compris, jusqu'aux premiers duels de drones (vers 35 s, 49 drones lancés). Ensuite le chaos des essaims fait diverger le float et le double. Sur 100 raids, toutes les métriques sont dans la tolérance : lancements, frappes, duels, sous-systèmes détruits, drones abattus, bombes interceptées. Sur 40 raids seulement, les frappes semblaient biaisées de +18 % ; sur 100, l'écart tombe à 7 %. C'était du bruit statistique.
+- **Comme le TS**, un drone avalé par un cœur ne passe pas par le compteur `swallowed` (réservé aux projectiles) et peut encore tirer pendant ce pas.
+- **Lot 1 laissé de côté** : le brouillage (virage ralenti et dégâts réduits dans la bulle d'un brouilleur).
 
 ### Notes de V0
 - **La sim ne sait rien du visualiseur.** Il lit les tables du monde et vide les événements (`DrainEvents`) après chaque pas pour en tirer des effets datés en temps de sim. La pause fige donc aussi les explosions.

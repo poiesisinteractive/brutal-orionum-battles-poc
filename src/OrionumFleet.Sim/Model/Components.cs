@@ -27,7 +27,8 @@ public struct WeaponState
 public struct HangarState
 {
     public int Stock;
-    public float Cooldown;
+    /// <summary>En double, vidée du pas exact (même raison que <see cref="WeaponState.Cooldown"/>).</summary>
+    public double Cooldown;
     public HangarMode Mode;
 }
 
@@ -253,11 +254,12 @@ public struct Drone
     public float3 Fwd;
     public int CarrierId;
     public float Hp;
-    public float Cooldown;
+    /// <summary>Minuteries en double, vidées du pas exact : en float, la cadence glisserait d'un pas (voir <see cref="WeaponState.Cooldown"/>).</summary>
+    public double Cooldown;
     public int TargetId;
-    public float RetargetIn;
+    public double RetargetIn;
     /// <summary>Secondes depuis la perte du lien avec le porteur : les drones s'éteignent.</summary>
-    public float OrphanTime;
+    public double OrphanTime;
     /// <summary>Passe d'attaque : vrai pendant le dégagement avant la passe suivante.</summary>
     public bool Extending;
     public DroneRole Role;

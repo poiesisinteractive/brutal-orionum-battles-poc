@@ -6,10 +6,11 @@ namespace OrionumFleet.Sim.Tests;
 
 /// <summary>
 /// Parité statistique du combat avec le proto TS (tools/ts-reference/dump-combat.ts) : des batailles
-/// scriptées sans IA, hangars vides (les drones arrivent en S4). Deux scénarios :
+/// scriptées sans IA. Trois scénarios :
 /// <list type="bullet">
-/// <item>raid : Raid sur Wolf 359, les deux flottes engagées par le commandement de flotte, 180 s ;</item>
-/// <item>wells : Champ de puits, la Coalition en tir courbe attaque la Tanière masquée par un puits, 240 s.</item>
+/// <item>raid : Raid sur Wolf 359, hangars vides, les deux flottes engagées par le commandement de flotte, 180 s ;</item>
+/// <item>wells : Champ de puits, hangars vides, la Coalition en tir courbe attaque la Tanière masquée par un puits, 240 s ;</item>
+/// <item>raid-drones : le raid avec les hangars pleins (S4).</item>
 /// </list>
 /// Le TS calcule en double et nous en float, et une même graine diverge vite : on compare des moyennes,
 /// à l'erreur type près.
@@ -24,8 +25,9 @@ public class CombatParityTests(ITestOutputHelper output)
     {
         var wells = scenario == "wells";
         var w = new World(seed, new WorldOptions { Scenario = wells ? ScenarioId.WellField : ScenarioId.Wolf359Raid });
-        foreach (ref var s in w.Ships.AsSpan())
-            s.Hangar.Stock = 0;
+        if (scenario != "raid-drones")
+            foreach (ref var s in w.Ships.AsSpan())
+                s.Hangar.Stock = 0;
         if (wells)
         {
             foreach (ref readonly var s in w.Ships.AsSpan())
@@ -78,6 +80,13 @@ public class CombatParityTests(ITestOutputHelper output)
             ["blockedShots"] = w.Stats.BlockedShots,
             ["arcShots"] = w.Stats.ArcShots.Coalition + w.Stats.ArcShots.Clans,
             ["swallowed"] = w.Stats.Swallowed,
+            ["bombsIntercepted"] = w.Stats.BombsIntercepted,
+            ["dronesLaunched"] = w.Stats.DronesLaunched,
+            ["droneShipHits"] = w.Stats.DroneShipHits,
+            ["droneDroneShots"] = w.Stats.DroneDroneShots,
+            ["droneSubsystemKills"] = w.Stats.DroneSubsystemKills,
+            ["dronesLostToPd"] = w.Stats.DronesLostToPd,
+            ["dronesAlive"] = w.Drones.AsSpan().ToArray().Count(d => d.Alive),
         };
         foreach (var kind in Kinds)
         {
@@ -102,6 +111,10 @@ public class CombatParityTests(ITestOutputHelper output)
             }
         foreach (var key in (string[])["depotHull", "bombsFired", "bombsDetonated", "blockedShots", "arcShots", "swallowed"])
             metrics[key] = b.GetProperty(key).GetDouble();
+        // Métriques des drones (S4) : seulement dans les références qui les contiennent.
+        foreach (var key in (string[])["bombsIntercepted", "dronesLaunched", "droneShipHits", "droneDroneShots", "droneSubsystemKills", "dronesLostToPd", "dronesAlive"])
+            if (b.TryGetProperty(key, out var v))
+                metrics[key] = v.GetDouble();
         return new Battle(metrics);
     }
 
@@ -116,6 +129,7 @@ public class CombatParityTests(ITestOutputHelper output)
     [Theory]
     [InlineData("raid")]
     [InlineData("wells")]
+    [InlineData("raid-drones")]
     public void Scripted_battles_match_the_ts_proto_statistically(string scenario)
     {
         using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Reference", $"combat-{scenario}.json")));

@@ -62,7 +62,7 @@ public sealed partial class World
             TimeScale = 1,
             CarrierId = carrier.Id,
             Hp = (role == DroneRole.Interceptor ? hangar.Interceptor : hangar.Drone).Hp,
-            Cooldown = Rng.Range(0, 1),
+            Cooldown = Rng.NextDouble(), // range(0, 1) du TS, gardé en double
             Fwd = dir,
             Role = role,
         };

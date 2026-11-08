@@ -50,7 +50,8 @@ public class SetupParityTests
             Assert.Equal(cooldowns.GetArrayLength(), s.WeaponCount);
             var w2 = 0;
             foreach (var cooldown in cooldowns.EnumerateArray())
-                Assert.Equal((float)cooldown.GetDouble(), s.Weapons[w2++].Cooldown);
+                // Recharges en double, tirées du RNG comme le TS : égales au bit près.
+                Assert.Equal(cooldown.GetDouble(), s.Weapons[w2++].Cooldown);
         }
 
         var wells = root.GetProperty("wells");
