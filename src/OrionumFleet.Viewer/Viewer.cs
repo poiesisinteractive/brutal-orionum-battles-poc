@@ -48,6 +48,8 @@ sealed class Viewer : IDisposable
     World _world = null!;
     int _scenario;
     int _seed = 1;
+    int _scale = 30;
+    double _frameMs;
     bool _paused;
     float _speed = 1;
     bool _stepOnce;
@@ -83,6 +85,7 @@ sealed class Viewer : IDisposable
             float.TryParse(Arg(name), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
         _scenario = Math.Clamp((int)FloatArg("--scenario", 0), 0, Scenarios.Names.Length - 1);
         _seed = (int)FloatArg("--seed", 1);
+        _scale = Math.Clamp((int)FloatArg("--scale", _scale), 1, 200);
         _capturePath = Arg("--capture");
         _captureAt = FloatArg("--at", 60);
         _yaw = FloatArg("--yaw", _yaw);
@@ -117,7 +120,7 @@ sealed class Viewer : IDisposable
 
     void Restart()
     {
-        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed));
+        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _scale);
         _effects.Clear();
         _feed.Clear();
         _accumulator = 0;
@@ -160,7 +163,9 @@ sealed class Viewer : IDisposable
             if (!capturing)
                 UpdateCamera((float)frameTime);
 
+            var renderStart = Stopwatch.GetTimestamp();
             var drawn = RenderScene();
+            _frameMs = Stopwatch.GetElapsedTime(renderStart).TotalMilliseconds;
             BuildUi(splash);
             ImGui.Render();
             if (drawn)
@@ -579,6 +584,13 @@ sealed class Viewer : IDisposable
                     _scenario = i;
                     Restart();
                 }
+            if (_scenario == Scenarios.GrandBattle)
+            {
+                ImGui.SetNextItemWidth(260);
+                ImGui.SliderInt("Échelle (x Escarmouche par camp)"u8, ref _scale, 1, 100, "%d"u8, ImGuiSliderFlags.None);
+                ImGui.SameLine();
+                ImGui.TextDisabled($"{12 * _scale + 1} coques");
+            }
             ImGui.SetNextItemWidth(120);
             ImGui.InputInt("Graine"u8, ref _seed, 1, 10, ImGuiInputTextFlags.None);
             ImGui.SameLine();
@@ -593,7 +605,8 @@ sealed class Viewer : IDisposable
             ImGui.SliderFloat("Vitesse (+/-)"u8, ref _speed, 0.125f, 32f, "x%.2f"u8, ImGuiSliderFlags.Logarithmic);
 
             var w = _world;
-            ImGui.Text($"Temps {w.Time:F1} s   pas {w.Tick}   {_stepMs:F3} ms/pas   {io.Framerate:F0} FPS");
+            ImGui.Text($"Temps {w.Time:F1} s   pas {w.Tick}   sim {_stepMs:F2} ms/pas   rendu {_frameMs:F1} ms   {io.Framerate:F0} FPS");
+            ImGui.TextDisabled($"{_renderer.LastInstances} instances, {_renderer.LastLines} segments, {_effects.Count} effets");
             if (w.Result is { } result)
                 ImGui.TextColored(new float4(1f, 0.85f, 0.3f, 1f), $"Fin : victoire {(result.Winner == Side.Coalition ? "de la Coalition" : "des Clans")} ({result.Reason}) à {result.Time:F1} s");
 
@@ -622,7 +635,9 @@ sealed class Viewer : IDisposable
             ImGui.Text($"Drones en vol {dronesAlive}   lancés {w.Stats.DronesLaunched}   abattus par la DCA {w.Stats.DronesLostToPd}");
             ImGui.Text($"Frappes de drones {w.Stats.DroneShipHits}   duels {w.Stats.DroneDroneShots}   sous-systèmes détruits {w.Stats.DroneSubsystemKills}");
 
-            if (ImGui.CollapsingHeader("Coques"u8, ImGuiTreeNodeFlags.DefaultOpen))
+            if (w.Ships.Count > 40 && ImGui.CollapsingHeader("Classes"u8, ImGuiTreeNodeFlags.DefaultOpen))
+                DrawClassSummary();
+            else if (w.Ships.Count <= 40 && ImGui.CollapsingHeader("Coques"u8, ImGuiTreeNodeFlags.DefaultOpen))
             {
                 foreach (ref readonly var s in w.Ships.AsSpan())
                 {
@@ -666,9 +681,41 @@ sealed class Viewer : IDisposable
         ImGui.End();
     }
 
-    /// <summary>Nom, coque (vert) et boucliers (bleu) au-dessus de chaque coque, et nom des puits.</summary>
+    /// <summary>Grandes batailles : par classe, coques en jeu et coque restante.</summary>
+    void DrawClassSummary()
+    {
+        Span<int> total = stackalloc int[GameData.Classes.Length];
+        Span<int> active = stackalloc int[GameData.Classes.Length];
+        Span<float> hull = stackalloc float[GameData.Classes.Length];
+        Span<float> hullMax = stackalloc float[GameData.Classes.Length];
+        foreach (ref readonly var s in _world.Ships.AsSpan())
+        {
+            var c = (int)s.ClassId;
+            total[c]++;
+            if (s.IsActive)
+                active[c]++;
+            hull[c] += s.Alive ? MathF.Max(0, s.Hull) : 0;
+            hullMax[c] += s.HullMax;
+        }
+        for (var c = 0; c < total.Length; c++)
+        {
+            if (total[c] == 0)
+                continue;
+            var cls = GameData.Classes[c];
+            var color = cls.Side == Side.Coalition ? new float4(0.6f, 0.78f, 1f, 1f) : new float4(1f, 0.65f, 0.4f, 1f);
+            string line = $"{cls.LabelFr,-22} {active[c],4} / {total[c],-4} en jeu   coque {100 * hull[c] / MathF.Max(1, hullMax[c]),3:F0} %%";
+            ImGui.TextColored(color, line);
+        }
+    }
+
+    /// <summary>
+    /// Nom, coque (vert) et boucliers (bleu) au-dessus des coques proches de la caméra (toutes en petite
+    /// bataille), et nom des puits.
+    /// </summary>
     void DrawLabels()
     {
+        var eye = Eye;
+        var labelRange = _world.Ships.Count <= 40 ? float.PositiveInfinity : 2200f;
         // Calque de fond : par-dessus la scène, mais sous les fenêtres ImGui.
         var draw = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
         foreach (ref readonly var g in _world.Wells.AsSpan())
@@ -677,7 +724,8 @@ sealed class Viewer : IDisposable
 
         foreach (ref readonly var s in _world.Ships.AsSpan())
         {
-            if (!s.Alive || s.Withdrawn || _renderer.Project(s.Pos + new float3(0, s.Class.Radius * 1.3f, 0)) is not { } p)
+            if (!s.Alive || s.Withdrawn || Vec.Dist(s.Pos, eye) > labelRange
+                || _renderer.Project(s.Pos + new float3(0, s.Class.Radius * 1.3f, 0)) is not { } p)
                 continue;
             var text = s.Side == Side.Coalition ? Col(0.65f, 0.8f, 1f, 0.9f) : Col(1f, 0.7f, 0.45f, 0.9f);
             draw.AddText(p + new float2(-30, -30), text, s.Name);

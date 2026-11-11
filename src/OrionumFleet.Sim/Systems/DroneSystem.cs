@@ -41,11 +41,20 @@ public static class DroneSystem
         }
     }
 
+    // Tampons des requêtes spatiales (un par site d'appel, par thread ; agrandis au besoin par la requête).
+    [ThreadStatic] static int[]? t_ships;
+    [ThreadStatic] static int[]? t_drones;
+    [ThreadStatic] static int[]? t_rounds;
+
     static bool EnemyNear(World w, in Ship s, float range)
     {
-        foreach (ref readonly var o in w.Ships.AsSpan())
+        var ships = w.Ships.AsSpan();
+        foreach (var i in w.ShipsNear(s.Pos, range, ref t_ships))
+        {
+            ref readonly var o = ref ships[i];
             if (o.IsActive && o.Side != s.Side && Vec.Dist(s.Pos, o.Pos) < range)
                 return true;
+        }
         return false;
     }
 
@@ -222,8 +231,10 @@ public static class DroneSystem
         var leash = GameData.Tuning.DroneLeash;
         var best = 0;
         var bestScore = float.PositiveInfinity;
-        foreach (ref readonly var o in w.Drones.AsSpan())
+        var drones = w.Drones.AsSpan();
+        foreach (var i in w.DronesNear(leashCenter, leash, ref t_drones))
         {
+            ref readonly var o = ref drones[i];
             if (!o.Alive || o.Side == d.Side || Vec.Dist(o.Pos, leashCenter) > leash)
                 continue;
             var dd = Vec.Dist(d.Pos, o.Pos);
@@ -233,16 +244,20 @@ public static class DroneSystem
         }
         // Les bombes en approche près du porteur passent en premier pour un écran, en second pour une escadre d'attaque.
         var home = carrier >= 0 ? w.Ships[carrier].Pos : d.Pos;
-        foreach (ref readonly var p in w.Projectiles.AsSpan())
+        var projectiles = w.Projectiles.AsSpan();
+        foreach (var i in w.ProjectilesNear(home, leash, ref t_rounds))
         {
+            ref readonly var p = ref projectiles[i];
             if (!p.Alive || p.Weapon != WeaponKind.Bomb || p.Side == d.Side || Vec.Dist(p.Pos, home) > leash)
                 continue;
             var score = Vec.Dist(d.Pos, p.Pos) * (attackMode ? 0.8f : 0.25f);
             if (score < bestScore)
                 (bestScore, best) = (score, p.Id);
         }
-        foreach (ref readonly var s in w.Ships.AsSpan())
+        var ships = w.Ships.AsSpan();
+        foreach (var i in w.ShipsNear(leashCenter, leash + Reach.MaxShipRadius, ref t_ships))
         {
+            ref readonly var s = ref ships[i];
             if (!s.IsActive || s.Side == d.Side || Vec.Dist(s.Pos, leashCenter) > leash + s.Class.Radius)
                 continue;
             var score = Vec.Dist(d.Pos, s.Pos) * (attackMode ? 0.55f : 1.3f);
@@ -271,12 +286,20 @@ public static class DroneSystem
             if (score < bestScore)
                 (best, bestScore) = (id, score);
         }
-        foreach (ref readonly var p in w.Projectiles.AsSpan())
+        var projectiles = w.Projectiles.AsSpan();
+        foreach (var i in w.ProjectilesNear(home, leash, ref t_rounds))
+        {
+            ref readonly var p = ref projectiles[i];
             if (p.Alive && p.Side != d.Side && p.Weapon is WeaponKind.Bomb or WeaponKind.Missile or WeaponKind.Emp)
                 Consider(d, p.Id, p.Pos, p.Weapon == WeaponKind.Missile ? 0.7f : 0.3f);
-        foreach (ref readonly var o in w.Drones.AsSpan())
+        }
+        var drones = w.Drones.AsSpan();
+        foreach (var i in w.DronesNear(home, leash, ref t_drones))
+        {
+            ref readonly var o = ref drones[i];
             if (o.Alive && o.Side != d.Side)
                 Consider(d, o.Id, o.Pos, 1);
+        }
         return best;
     }
 

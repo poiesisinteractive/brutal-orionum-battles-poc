@@ -19,3 +19,13 @@ Ce dépôt porte le proto de combat de flotte d'Orionum (TypeScript + three.js, 
 | Audio (plus tard) | **SDL_mixer**. |
 | Plateforme | **Windows.** |
 | Dépôt | Public : `poiesisinteractive/brutal-orionum-battles-poc`, document de concept compris. |
+
+## Révision du 2026-11-08 : la grande bataille
+
+Après S4, le portage change de cap pour profiter de BRUTAL.
+
+| Sujet | Décision |
+| --- | --- |
+| Orionum (S5) | **Reporté.** Les capacités Orionum (Horloge, fronde, élan) et leur IA attendront. |
+| Priorité | La piste **« Grande bataille »** : une bataille géante, d'abord pour la regarder. On commence par l'échelle (flottes de N coques en formations), puis le rendu de masse (instancié) et la sim de masse (grille spatiale, JobScheduler). L'IA (S6) vient ensuite. |
+| Fidélité | **Libre** dès qu'il s'agit de la masse. On peut simplifier les règles du proto en O(n²) tant que la bataille reste crédible. Les tests de parité restent un garde-fou à l'échelle de l'Escarmouche : un écart doit être voulu et documenté. |

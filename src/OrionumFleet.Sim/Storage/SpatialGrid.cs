@@ -13,20 +13,22 @@ namespace OrionumFleet.Sim;
 public sealed class SpatialGrid
 {
     /// <summary>Au-delà de ce nombre de cellules couvertes, une requête balaie tous les seaux.</summary>
-    const int MaxVisitedCells = 512;
+    const int MaxVisitedCells = 1024;
 
     readonly float _cellSize;
     readonly float _inverseCell;
-    readonly int _bucketMask;
-    readonly int[] _bucketStart;
-    readonly int[] _bucketCount;
+    readonly int _maxBuckets;
+    int _bucketMask;
+    int[] _bucketStart;
+    int[] _bucketCount;
     int[] _entries = [];
     int[] _entryBucket = [];
     float3[] _positions = [];
     int _count;
 
     /// <param name="cellSize">Côté d'une cellule (u). Idéalement de l'ordre du rayon de requête courant.</param>
-    /// <param name="buckets">Nombre de seaux de hachage (puissance de deux).</param>
+    /// <param name="buckets">Nombre maximal de seaux de hachage (puissance de deux). La grille en prend environ deux
+    /// par entrée, entre 64 et ce maximum : une petite bataille ne paie pas des milliers de seaux à chaque pas.</param>
     public SpatialGrid(float cellSize, int buckets = 4096)
     {
         if ((buckets & (buckets - 1)) != 0)
@@ -34,6 +36,14 @@ public sealed class SpatialGrid
 
         _cellSize = cellSize;
         _inverseCell = 1 / cellSize;
+        _maxBuckets = buckets;
+        _bucketStart = [];
+        _bucketCount = [];
+        Resize(Math.Min(64, buckets));
+    }
+
+    void Resize(int buckets)
+    {
         _bucketMask = buckets - 1;
         _bucketStart = new int[buckets + 1];
         _bucketCount = new int[buckets];
@@ -45,6 +55,9 @@ public sealed class SpatialGrid
     public void Build(ReadOnlySpan<float3> positions)
     {
         _count = positions.Length;
+        var wanted = Math.Clamp((int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, _count * 2)), Math.Min(64, _maxBuckets), _maxBuckets);
+        if (wanted != _bucketMask + 1)
+            Resize(wanted);
         if (_entries.Length < _count)
         {
             var size = Math.Max(_count, 64);
@@ -80,7 +93,11 @@ public sealed class SpatialGrid
     /// Index des entrées à moins de <paramref name="radius"/> de <paramref name="center"/>, triés par ordre
     /// croissant, écrits dans <paramref name="results"/> (agrandi si besoin). Rend le nombre trouvé.
     /// </summary>
-    public int QuerySphere(float3 center, float radius, ref int[] results)
+    public int QuerySphere(float3 center, float radius, ref int[] results) => QuerySphere(center, radius, ref results, sorted: true);
+
+    /// <param name="sorted">Faux : l'ordre est celui des seaux visités (déterministe, mais pas celui des index).
+    /// Évite un tri en O(k log k) quand une requête dense rend des milliers d'entrées.</param>
+    public int QuerySphere(float3 center, float radius, ref int[] results, bool sorted)
     {
         var found = 0;
         var radiusSq = radius * radius;
@@ -88,31 +105,44 @@ public sealed class SpatialGrid
         int y0 = CellOf(center.Y - radius), y1 = CellOf(center.Y + radius);
         int z0 = CellOf(center.Z - radius), z1 = CellOf(center.Z + radius);
 
-        // Une grande requête couvre trop de cellules : on balaie alors chaque seau une fois.
+        // Une grande requête couvre trop de cellules : on parcourt alors toutes les entrées, dans l'ordre des
+        // index (le résultat est déjà trié).
         var cells = (long)(x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1);
         if (cells > Math.Min(_bucketMask + 1, MaxVisitedCells))
         {
-            for (var b = 0; b <= _bucketMask; b++)
-                CollectBucket(b, center, radiusSq, ref results, ref found);
+            for (var index = 0; index < _count; index++)
+            {
+                if (Vec.DistSq(_positions[index], center) > radiusSq)
+                    continue;
+                if (found == results.Length)
+                    Array.Resize(ref results, Math.Max(16, results.Length * 2));
+                results[found++] = index;
+            }
+            return found;
         }
         else
         {
-            // Plusieurs cellules peuvent tomber dans le même seau : on ne visite chaque seau qu'une fois.
-            Span<int> visited = stackalloc int[(int)cells];
-            var visitedCount = 0;
+            // Plusieurs cellules peuvent tomber dans le même seau : on ne visite chaque seau qu'une fois. Le masque
+            // des seaux visités est local à la requête : les requêtes sont sûres entre threads (la grille est en
+            // lecture seule entre deux Build).
+            Span<ulong> visited = stackalloc ulong[(_bucketMask + 64) >> 6];
+            visited.Clear();
             for (var x = x0; x <= x1; x++)
             for (var y = y0; y <= y1; y++)
             for (var z = z0; z <= z1; z++)
             {
                 var bucket = BucketOf(x, y, z);
-                if (visited[..visitedCount].Contains(bucket))
+                ref var word = ref visited[bucket >> 6];
+                var bit = 1UL << (bucket & 63);
+                if ((word & bit) != 0)
                     continue;
-                visited[visitedCount++] = bucket;
+                word |= bit;
                 CollectBucket(bucket, center, radiusSq, ref results, ref found);
             }
         }
 
-        results.AsSpan(0, found).Sort();
+        if (sorted)
+            results.AsSpan(0, found).Sort();
         return found;
     }
 

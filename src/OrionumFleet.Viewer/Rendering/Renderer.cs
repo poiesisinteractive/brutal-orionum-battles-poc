@@ -11,14 +11,42 @@ record struct Vertex(float3 Position, float3 Normal);
 [StructLayout(LayoutKind.Sequential)]
 record struct LineVertex(float3 Position, float3 Color);
 
-/// <summary>Maillage GPU minimal : un VAO et un VBO, dessiné en triangles non indexés.</summary>
-readonly record struct Mesh(GlVertexArray VertexArray, GlBuffer VertexBuffer, int VertexCount);
+/// <summary>Une instance de maillage : matrice du modèle (convention ligne de Brutal.Numerics) et couleur + émissif.</summary>
+[StructLayout(LayoutKind.Sequential)]
+struct Instance
+{
+    public float4x4 Model;
+    /// <summary>rgb = couleur sRGB, a = multiplicateur émissif HDR.</summary>
+    public float4 ColorEmissive;
+}
+
+/// <summary>
+/// Maillage GPU dessiné en instances : un VAO qui lie les sommets (attributs 0-1) et un tampon d'instances
+/// (attributs 2-6, diviseur 1). Les instances de la frame s'accumulent côté CPU puis partent en un seul appel.
+/// </summary>
+sealed class Mesh
+{
+    public required GlVertexArray VertexArray { get; init; }
+    public required GlBuffer VertexBuffer { get; init; }
+    public required GlBuffer InstanceBuffer { get; init; }
+    public required int VertexCount { get; init; }
+    public Instance[] Instances = new Instance[1024];
+    public int InstanceCount;
+
+    public void Add(in float4x4 model, float3 color, float emissive)
+    {
+        if (InstanceCount == Instances.Length)
+            Array.Resize(ref Instances, Instances.Length * 2);
+        Instances[InstanceCount++] = new Instance { Model = model, ColorEmissive = new float4(color, emissive) };
+    }
+}
 
 /// <summary>
 /// Renderer forward OpenGL 4.1, repris de Brutal Arena et mis à l'échelle d'une bataille (des milliers
 /// d'unités) : la scène est rendue en HDR, éclairée par une lumière directionnelle, une ambiance et jusqu'à
-/// 64 lumières ponctuelles, puis passée au post-process (bloom, tonemapping). Les tirs, rayons et repères
-/// sont des lignes émissives en additif, dessinées après les solides.
+/// 64 lumières ponctuelles, puis passée au post-process (bloom, tonemapping). Les solides sont dessinés en
+/// instances (un appel par maillage et par frame, quel que soit le nombre de coques et de drones) ; les tirs,
+/// rayons et repères sont des lignes émissives en additif, dessinées après les solides.
 /// </summary>
 sealed class Renderer : IDisposable
 {
@@ -103,9 +131,28 @@ sealed class Renderer : IDisposable
 
     float3 _eye;
 
-    /// <summary>Lignes en additif (sans écrire la profondeur), puis bloom + tonemapping vers le backbuffer.</summary>
+    /// <summary>Nombre d'instances solides et de segments de la dernière frame (panneau de débug).</summary>
+    public int LastInstances { get; private set; }
+    public int LastLines { get; private set; }
+
+    /// <summary>Solides en instances, lignes en additif (sans écrire la profondeur), puis bloom + tonemapping.</summary>
     public void EndFrame()
     {
+        _program.Use();
+        LastInstances = 0;
+        foreach (var mesh in (ReadOnlySpan<Mesh>)[Cube, Sphere])
+        {
+            if (mesh.InstanceCount == 0)
+                continue;
+            mesh.VertexArray.Bind();
+            mesh.InstanceBuffer.Bind(GlBindTarget.ArrayBuffer);
+            OpenGl.BufferData(GlBindTarget.ArrayBuffer, (ReadOnlySpan<Instance>)mesh.Instances.AsSpan(0, mesh.InstanceCount), GlBufferUsage.StreamDraw);
+            OpenGl.Draw(GlTopology.Triangles, mesh.VertexCount, mesh.InstanceCount, 0, 0);
+            LastInstances += mesh.InstanceCount;
+            mesh.InstanceCount = 0;
+        }
+        LastLines = _lineCount / 2;
+
         if (_lineCount > 0)
         {
             OpenGl.Enable(GlCapability.Blend);
@@ -167,16 +214,10 @@ sealed class Renderer : IDisposable
     public void DrawSphere(float3 position, float radius, float3 color, float emissive = 0) =>
         Draw(Sphere, float4x4.CreateScale(radius) * float4x4.CreateTranslation(position), color, emissive);
 
-    public void Draw(in Mesh mesh, in float4x4 model, float3 color, float emissive)
-    {
-        mesh.VertexArray.Bind();
-        _program.Uniform("model"u8, model);
-        _program.Uniform("color"u8, color);
-        _program.Uniform("emissive"u8, emissive);
-        OpenGl.Draw(GlTopology.Triangles, mesh.VertexCount, 1, 0, 0);
-    }
+    /// <summary>Ajoute une instance ; tout part au GPU dans <see cref="EndFrame"/>.</summary>
+    public static void Draw(Mesh mesh, in float4x4 model, float3 color, float emissive) => mesh.Add(model, color, emissive);
 
-    static Mesh Upload(Vertex[] vertices)
+    static unsafe Mesh Upload(Vertex[] vertices)
     {
         var vertexArray = OpenGl.GenVertexArray().Bind();
         var vertexBuffer = OpenGl.GenBuffer();
@@ -186,7 +227,18 @@ sealed class Renderer : IDisposable
         OpenGl.VertexAttribute(new GlAttribute(1, 3, OpenGl.GL_FLOAT, GlScaling.Float, 6 * sizeof(float), 3 * sizeof(float)));
         OpenGl.EnableVertexAttribArray(0);
         OpenGl.EnableVertexAttribArray(1);
-        return new Mesh(vertexArray, vertexBuffer, vertices.Length);
+
+        // Tampon d'instances : la matrice occupe les attributs 2 à 5 (une colonne GLSL chacun), la couleur le 6.
+        var instanceBuffer = OpenGl.GenBuffer();
+        instanceBuffer.Bind(GlBindTarget.ArrayBuffer);
+        var stride = sizeof(Instance);
+        for (uint a = 0; a < 5; a++)
+        {
+            OpenGl.VertexAttribute(new GlAttribute(2 + a, 4, OpenGl.GL_FLOAT, GlScaling.Float, stride, (int)(a * 4 * sizeof(float))));
+            OpenGl.EnableVertexAttribArray(2 + a);
+            OpenGl.VertexAttribDivisor(2 + a, 1);
+        }
+        return new Mesh { VertexArray = vertexArray, VertexBuffer = vertexBuffer, InstanceBuffer = instanceBuffer, VertexCount = vertices.Length };
     }
 
     /// <summary>Cube de -1 à 1, deux triangles par face, normales par face.</summary>
@@ -232,7 +284,7 @@ sealed class Renderer : IDisposable
     public void Dispose()
     {
         OpenGl.DeleteVertexArrays([Cube.VertexArray, Sphere.VertexArray, _lineArray]);
-        OpenGl.DeleteBuffers([Cube.VertexBuffer, Sphere.VertexBuffer, _lineBuffer]);
+        OpenGl.DeleteBuffers([Cube.VertexBuffer, Sphere.VertexBuffer, Cube.InstanceBuffer, Sphere.InstanceBuffer, _lineBuffer]);
         _program.Dispose();
         _lineProgram.Dispose();
         Lights.Dispose();
@@ -246,15 +298,20 @@ sealed class Renderer : IDisposable
             #version 410 core
             layout (location = 0) in vec3 aPos;
             layout (location = 1) in vec3 aNormal;
-            uniform mat4 model;
+            layout (location = 2) in mat4 iModel;          // attributs 2 à 5, un par instance
+            layout (location = 6) in vec4 iColorEmissive;  // rgb sRGB, a = émissif
             uniform mat4 viewProjection;
             out vec3 normal;
             out vec3 worldPos;
+            flat out vec3 color;
+            flat out float emissive;
             void main()
             {
-                vec4 world = model * vec4(aPos, 1.0);
+                vec4 world = iModel * vec4(aPos, 1.0);
                 worldPos = world.xyz;
-                normal = mat3(model) * aNormal;
+                normal = mat3(iModel) * aNormal;
+                color = iColorEmissive.rgb;
+                emissive = iColorEmissive.a;
                 gl_Position = viewProjection * world;
             }
             """u8;
@@ -264,9 +321,9 @@ sealed class Renderer : IDisposable
             #version 410 core
             in vec3 normal;
             in vec3 worldPos;
+            flat in vec3 color;          // sRGB, converti en linéaire ici
+            flat in float emissive;
 
-            uniform vec3 color;          // sRGB, converti en linéaire ici
-            uniform float emissive;
             uniform float emissiveScale;
             uniform vec3 cameraPos;
             uniform vec3 sunDirection;

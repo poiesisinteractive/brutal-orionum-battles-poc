@@ -12,15 +12,28 @@ static class Scenarios
         "Raid sur Wolf 359 : engagement général",
         "Champ de puits : tir courbe sur la Tanière",
         "Raid : tenailles sur le Mastodonte",
+        "Grande bataille : l'Escarmouche multipliée",
     ];
 
-    public static World Create(int index, uint seed)
+    public const int GrandBattle = 3;
+
+    /// <param name="scale">Grande bataille : chaque camp aligne <paramref name="scale"/> fois sa flotte d'Escarmouche.</param>
+    public static World Create(int index, uint seed, int scale = 1)
     {
-        var w = new World(seed, new WorldOptions { Scenario = index == 1 ? ScenarioId.WellField : ScenarioId.Wolf359Raid });
+        var options = new WorldOptions { Scenario = index == 1 ? ScenarioId.WellField : ScenarioId.Wolf359Raid };
+        if (index == GrandBattle)
+            options = options with
+            {
+                Coalition = Enumerable.Repeat(GameData.SkirmishCoalition, scale).SelectMany(x => x).ToArray(),
+                Clans = Enumerable.Repeat(GameData.SkirmishClans, scale).SelectMany(x => x).ToArray(),
+                TimeLimit = 3600,
+            };
+        var w = new World(seed, options);
 
         switch (index)
         {
             case 0:
+            case GrandBattle:
                 // Mêmes ordres que CombatParityTests « raid » : tous les groupes en ciblage automatique.
                 foreach (var side in (ReadOnlySpan<Side>)[Side.Coalition, Side.Clans])
                     foreach (var g in w.Fleet(side).Groups)

@@ -12,6 +12,12 @@ public readonly record struct DamageProfile(float? VsShield = null, float? VsHul
 /// </summary>
 public static class Combat
 {
+    // Tampons des requêtes spatiales (un par site d'appel, par thread ; agrandis au besoin par la requête).
+    [ThreadStatic] static int[]? t_targets;
+    [ThreadStatic] static int[]? t_allies;
+    [ThreadStatic] static int[]? t_rounds;
+    [ThreadStatic] static int[]? t_drones;
+
     /// <summary>Mines qu'un poseur garde au plus en vie (lot 1).</summary>
     public const int MineFieldMax = 18;
     /// <summary>La défense ponctuelle ne repère une mine que d'aussi près.</summary>
@@ -235,15 +241,16 @@ public static class Combat
         var ships = w.Ships.AsSpan();
         var best = -1;
         var bestScore = minWeight;
-        for (var e = 0; e < ships.Length; e++)
+        foreach (var e in w.ShipsNear(s.Pos, emp.Range, ref t_targets))
         {
             ref readonly var enemy = ref ships[e];
             if (!enemy.IsActive || enemy.Side == s.Side || Vec.Dist(s.Pos, enemy.Pos) > emp.Range)
                 continue;
             float score = 0;
             var friendly = false;
-            foreach (ref readonly var o in ships)
+            foreach (var oi in w.ShipsNear(enemy.Pos, blast * 0.8f + Reach.MaxShipRadius, ref t_allies))
             {
+                ref readonly var o = ref ships[oi];
                 if (!o.IsActive || Vec.Dist(o.Pos, enemy.Pos) > blast * 0.8f + o.Class.Radius)
                     continue;
                 if (o.Side == s.Side)
@@ -471,8 +478,10 @@ public static class Combat
     /// <summary>Les bombes touchent aussi les alliés : retenir le tir tant qu'une coque amie (ou le tireur) est près de la cible.</summary>
     static bool BombSafe(World w, in Ship s, in Ship target, float blast)
     {
-        foreach (ref readonly var o in w.Ships.AsSpan())
+        var ships = w.Ships.AsSpan();
+        foreach (var i in w.ShipsNear(target.Pos, blast + Reach.MaxShipRadius + target.Class.Radius + 60, ref t_allies))
         {
+            ref readonly var o = ref ships[i];
             if (!o.IsActive || o.Side != s.Side)
                 continue;
             // Le souffle part à la surface de la cible : on mesure depuis là.
@@ -525,7 +534,8 @@ public static class Combat
         var best = -1;
         var bestScore = float.PositiveInfinity;
         var ships = w.Ships.AsSpan();
-        for (var i = 0; i < ships.Length; i++)
+        // Usable exige d ≤ portée + rayon de la cible : la grille ne rend que ceux-là (dans l'ordre des index).
+        foreach (var i in w.ShipsNear(s.Pos, range * jamRange + Reach.MaxShipRadius, ref t_targets))
         {
             ref readonly var o = ref ships[i];
             if (!Usable(s, o) || (def.Kind == WeaponKind.Bomb && !Trackable(s, o)))
@@ -545,8 +555,10 @@ public static class Combat
         var bestId = 0;
         var bestScore = float.PositiveInfinity;
         var bestPos = float3.Zero;
-        foreach (ref readonly var p in w.Projectiles.AsSpan())
+        var projectiles = w.Projectiles.AsSpan();
+        foreach (var i in w.ProjectilesNear(s.Pos, range, ref t_rounds))
         {
+            ref readonly var p = ref projectiles[i];
             if (!p.Alive || p.Weapon is not (WeaponKind.Missile or WeaponKind.Bomb or WeaponKind.Emp or WeaponKind.Mine) || p.Side == s.Side)
                 continue;
             var d = Vec.Dist(s.Pos, p.Pos);
@@ -557,8 +569,10 @@ public static class Combat
             if (score < bestScore)
                 (bestScore, bestId, bestPos) = (score, p.Id, p.Pos);
         }
-        foreach (ref readonly var dr in w.Drones.AsSpan())
+        var drones = w.Drones.AsSpan();
+        foreach (var i in w.DronesNear(s.Pos, range, ref t_drones))
         {
+            ref readonly var dr = ref drones[i];
             if (!dr.Alive || dr.Side == s.Side)
                 continue;
             var d = Vec.Dist(s.Pos, dr.Pos);

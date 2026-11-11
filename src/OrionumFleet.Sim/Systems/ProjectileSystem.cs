@@ -8,6 +8,11 @@ public static class ProjectileSystem
     /// <summary>Fusée de proximité d'une mine, au-delà du rayon de la coque (lot 1).</summary>
     const float MineFuse = 90;
 
+    // Tampons des requêtes spatiales (un par site d'appel, par thread ; agrandis au besoin par la requête).
+    [ThreadStatic] static int[]? t_ships;
+    [ThreadStatic] static int[]? t_blast;
+    [ThreadStatic] static int[]? t_drones;
+
     static bool IsGuided(WeaponKind weapon) => weapon is WeaponKind.Missile or WeaponKind.Bomb or WeaponKind.Emp;
 
     public static void UpdateProjectile(World w, int index, float dt)
@@ -86,8 +91,10 @@ public static class ProjectileSystem
         {
             // Fusée de proximité : explose près de n'importe quelle coque ennemie.
             var fuse = (p.Blast ?? 0) * (p.Weapon == WeaponKind.Emp ? 0.2f : 0.35f);
-            foreach (ref readonly var s in w.Ships.AsSpan())
+            var hulls = w.Ships.AsSpan();
+            foreach (var i in w.ShipsNear(p.Pos, Reach.MaxShipRadius + fuse, ref t_ships))
             {
+                ref readonly var s = ref hulls[i];
                 if (!s.IsActive || s.Side == p.Side)
                     continue;
                 if (Vec.Dist(s.Pos, p.Pos) <= s.Class.Radius + fuse)
@@ -104,7 +111,8 @@ public static class ProjectileSystem
         }
 
         var ships = w.Ships.AsSpan();
-        for (var i = 0; i < ships.Length; i++)
+        // Le segment du pas touche une coque seulement si elle est à moins de (longueur du segment + son rayon) du bout.
+        foreach (var i in w.ShipsNear(p.Pos, Vec.Len(p.Pos - p.PrevPos) + Reach.MaxShipRadius, ref t_ships))
         {
             ref readonly var s = ref ships[i];
             if (!s.IsActive || s.Side == p.Side)
@@ -138,7 +146,7 @@ public static class ProjectileSystem
         w.Stats.BombsDetonated++;
         w.Emit(new SimEvent { Type = SimEventType.Blast, At = p.Pos, Value = radius, Side = p.Side });
         w.Emit(new SimEvent { Type = SimEventType.Explosion, At = p.Pos, Value = radius * 0.5f, Side = p.Side });
-        for (var i = 0; i < w.Ships.Count; i++)
+        foreach (var i in w.ShipsNear(p.Pos, radius + Reach.MaxShipRadius, ref t_blast))
         {
             ref readonly var s = ref w.Ships[i];
             if (!s.IsActive)
@@ -155,9 +163,12 @@ public static class ProjectileSystem
                 w.Stats.BombDamage += amount;
             Combat.ApplyDamage(w, i, amount, from, null, friendly ? 0 : p.OwnerId, new DamageProfile(Pierce: p.Pierce));
         }
-        foreach (ref var dr in w.Drones.AsSpan())
+        foreach (var i in w.DronesNear(p.Pos, radius, ref t_drones))
+        {
+            ref var dr = ref w.Drones[i];
             if (dr.Alive && Vec.Dist(dr.Pos, p.Pos) <= radius)
                 w.DamageDrone(ref dr, 1e3f);
+        }
     }
 
     /// <summary>Bombe à énergie : toute face de bouclier dans le rayon tombe à zéro et y reste un moment ; les drones grillent.</summary>

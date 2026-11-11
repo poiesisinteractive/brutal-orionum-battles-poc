@@ -235,20 +235,39 @@ public static class Movement
         if (t >= 0 && w.Ships[t].IsActive && w.Ships[t].Side != s.Side)
             return Vec.Normalize(w.Ships[t].Pos - s.Pos);
 
+        // L'ennemi le plus proche : d'abord dans un rayon (grille), sinon sur toute la table. Trouvé à moins de
+        // ThreatSearch, il bat tout ennemi hors du rayon : même résultat que la boucle complète du TS.
+        var ships = w.Ships.AsSpan();
         var best = -1;
         var bestD = float.PositiveInfinity;
-        var ships = w.Ships.AsSpan();
-        for (var i = 0; i < ships.Length; i++)
+        foreach (var i in w.ShipsNear(s.Pos, ThreatSearch, ref t_near))
+            Closer(ships, s, i, ref best, ref bestD);
+        if (best < 0 || bestD > ThreatSearch)
+        {
+            (best, bestD) = (-1, float.PositiveInfinity);
+            for (var i = 0; i < ships.Length; i++)
+                Closer(ships, s, i, ref best, ref bestD);
+        }
+        return best >= 0 ? Vec.Normalize(ships[best].Pos - s.Pos) : null;
+
+        static void Closer(ReadOnlySpan<Ship> ships, in Ship s, int i, ref int best, ref float bestD)
         {
             ref readonly var o = ref ships[i];
             if (!o.IsActive || o.Side == s.Side)
-                continue;
+                return;
             var d = Vec.Dist(o.Pos, s.Pos);
             if (d < bestD)
                 (best, bestD) = (i, d);
         }
-        return best >= 0 ? Vec.Normalize(ships[best].Pos - s.Pos) : null;
     }
+
+    /// <summary>Rayon de la recherche par grille de l'ennemi le plus proche (au-delà : boucle complète).</summary>
+    const float ThreatSearch = 1500;
+
+    // Tampons des requêtes spatiales (un par site d'appel, par thread ; agrandis au besoin par la requête).
+    [ThreadStatic] static int[]? t_near;
+    [ThreadStatic] static int[]? t_ships;
+    [ThreadStatic] static int[]? t_projectiles;
 
     /// <summary>Garder le flanc vers la menace, du côté qui demande le moins de rotation.</summary>
     static float3 BroadsideFacing(in Ship s, float3 threat)
@@ -555,8 +574,11 @@ public static class Movement
             return;
 
         var push = float3.Zero;
-        foreach (ref readonly var o in w.Ships.AsSpan())
+        var ships = w.Ships.AsSpan();
+        var reach = (small ? Reach.MaxStandoff * GameData.Tuning.KillZone : cls.Standoff!.Value) + cls.Radius + Reach.MaxShipRadius;
+        foreach (var i in w.ShipsNear(s.Pos, reach, ref t_ships))
         {
+            ref readonly var o = ref ships[i];
             if (!o.IsActive || o.Side == s.Side)
                 continue;
             var zone = small ? (o.Class.Standoff ?? 0) * GameData.Tuning.KillZone : cls.Standoff!.Value;
@@ -584,8 +606,10 @@ public static class Movement
             st.Vel += core;
 
         // Nos propres mines sont cartographiées : on les contourne (celles de l'ennemi, on les découvre trop tard).
-        foreach (ref readonly var p in w.Projectiles.AsSpan())
+        var projectiles = w.Projectiles.AsSpan();
+        foreach (var i in w.ProjectilesNear(s.Pos, r + 170, ref t_projectiles))
         {
+            ref readonly var p = ref projectiles[i];
             if (!p.Alive || p.Weapon != WeaponKind.Mine || p.Side != s.Side)
                 continue;
             var clear = r + 170;
@@ -594,8 +618,11 @@ public static class Movement
                 st.Vel += Vec.Scale(Vec.Normalize(s.Pos - p.Pos), (clear - d) * 1.5f);
         }
 
-        foreach (ref readonly var o in w.Ships.AsSpan())
+        var ships = w.Ships.AsSpan();
+        var reach = MathF.Max(CombatRules.BreachRadius(Reach.MaxShipRadius) + r + 40, r + Reach.MaxShipRadius + 30);
+        foreach (var i in w.ShipsNear(s.Pos, reach, ref t_ships))
         {
+            ref readonly var o = ref ships[i];
             // S'écarter d'une coque à l'agonie : son réacteur va lâcher.
             if (o.Alive && o.Dying is not null)
             {

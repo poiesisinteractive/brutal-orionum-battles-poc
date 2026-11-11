@@ -11,6 +11,9 @@ public sealed partial class World
     const double DepotLargeExp = 1.3;
     const double DepotLargeFrom = 2.53;
 
+    /// <summary>Front d'un rang : au-delà, les coques du même rôle se rangent en profondeur (grandes batailles).</summary>
+    const int MaxPerRow = 12;
+
     /// <summary>Rang de déploiement par rôle (z, vers l'ennemi) quand les postes classiques ne suffisent pas.</summary>
     static float RankZ(Role role) => role switch
     {
@@ -64,12 +67,19 @@ public sealed partial class World
                 // Les petites flottes gardent les postes placés à la main (la calibration de l'Escarmouche).
                 var classic = ClassicSlots(role);
                 var useClassic = classic is not null && ids.Length <= classic.Length;
+                // Grandes flottes : le rang devient un bloc (jusqu'à MaxPerRow de front, en profondeur vers
+                // l'arrière, sur trois étages). Jusqu'à MaxPerRow coques, c'est le rang unique du TS.
+                var perRow = Math.Min(ids.Length, MaxPerRow);
                 for (var i = 0; i < ids.Length; i++)
                 {
                     var classId = ids[i];
-                    var x = (i - (ids.Length - 1) / 2f) * gap;
-                    var y = (i % 3 - 1) * 30f;
-                    var slot = useClassic ? classic![i] : new float3(x, y, RankZ(role));
+                    var col = i % perRow;
+                    var row = i / perRow;
+                    var inRow = Math.Min(perRow, ids.Length - row * perRow);
+                    var x = (col - (inRow - 1) / 2f) * gap;
+                    var y = (i % 3 - 1) * 30f + (row % 3 - 1) * gap * 0.5f;
+                    var z = RankZ(role) - row * gap * 0.8f;
+                    var slot = useClassic ? classic![i] : new float3(x, y, z);
                     var pos = basePos + new float3(slot.X * facing, slot.Y, slot.Z * facing);
                     var name = ++nameIndex[(int)classId];
                     AddShip(classId, name, pos, new float3(0, 0, facing));
