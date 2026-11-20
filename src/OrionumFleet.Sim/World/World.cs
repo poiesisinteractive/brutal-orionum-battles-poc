@@ -79,6 +79,7 @@ public sealed partial class World
         _history = new Snapshot[32 * GameData.Tuning.HistorySlots];
         _historyHead = new int[32];
         _historyCount = new int[32];
+        (_coalitionHome, _clansHome) = PickHomes(seed, Scenario);
 
         SetupScenario(
             options.Coalition ?? GameData.SkirmishCoalition,
@@ -95,6 +96,7 @@ public sealed partial class World
         Pillars = source.Pillars;
         TimeLimit = source.TimeLimit;
         Rng = source.Rng;
+        (_coalitionHome, _clansHome) = (source._coalitionHome, source._clansHome);
         Time = source.Time;
         Tick = source.Tick;
         Result = source.Result;
@@ -156,7 +158,30 @@ public sealed partial class World
     }
 
     /// <summary>Point de départ d'un camp (les coques en retraite sautent près de lui).</summary>
-    public float3 Home(Side side) => side == Side.Coalition ? Scenario.CoalitionSpawn : Scenario.ClansSpawn;
+    public float3 Home(Side side) => side == Side.Coalition ? _coalitionHome : _clansHome;
+
+    readonly float3 _coalitionHome;
+    readonly float3 _clansHome;
+
+    /// <summary>
+    /// Départs des flottes : ceux du scénario, ou (grande bataille) deux points tirés de la graine parmi ses
+    /// points de départ, assez éloignés. Un RNG à part : le flux principal reste celui du TS.
+    /// </summary>
+    static (float3 Coalition, float3 Clans) PickHomes(uint seed, ScenarioDef scenario)
+    {
+        var points = scenario.SpawnPoints;
+        if (points.Length < 2)
+            return (scenario.CoalitionSpawn, scenario.ClansSpawn);
+        var rng = new Rng(seed * 2654435761u + 0x5157);
+        for (var attempt = 0; attempt < 64; attempt++)
+        {
+            var a = points[rng.Int(points.Length)];
+            var b = points[rng.Int(points.Length)];
+            if (Vec.Dist(a, b) >= scenario.MinSpawnSeparation)
+                return (a, b);
+        }
+        return (points[0], points[1]);
+    }
 
     public string WellName(in GravityWell g) => g.NameIndex >= 0 ? Scenario.Wells[g.NameIndex].Name : "Fronde";
 

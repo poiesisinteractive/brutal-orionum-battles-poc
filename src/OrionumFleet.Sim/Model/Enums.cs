@@ -172,12 +172,16 @@ public enum ScenarioId : byte
 {
     Wolf359Raid,
     WellField,
+    /// <summary>Grande bataille à l'échelle du système de Wolf 359 : planètes, annihilation, départs tirés de la graine.</summary>
+    Wolf359System,
 }
 
-/// <summary>Objectif de bataille. Seul le raid est dans le périmètre (les autres viennent du lot 1).</summary>
+/// <summary>Objectif de bataille : le raid du proto, ou l'annihilation de la grande bataille.</summary>
 public enum Objective : byte
 {
     Raid,
+    /// <summary>La dernière flotte debout l'emporte.</summary>
+    Annihilation,
 }
 
 public enum ZoneKind : byte
@@ -195,6 +199,8 @@ public enum ResultReason : byte
     DepotDestroyed,
     Timeout,
     FleetLost,
+    /// <summary>Annihilation : les deux flottes sont tombées au même pas.</summary>
+    MutualDestruction,
 }
 
 public enum Formation : byte

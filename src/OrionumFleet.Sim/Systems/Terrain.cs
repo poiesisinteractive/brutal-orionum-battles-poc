@@ -140,6 +140,7 @@ public static class Terrain
                 Total = float.PositiveInfinity,
                 Eye = 0,
                 SourceId = 0,
+                Planet = d.Planet,
             });
         }
     }

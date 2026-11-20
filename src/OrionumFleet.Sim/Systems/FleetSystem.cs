@@ -48,7 +48,49 @@ public static class FleetSystem
                 Doctrine.Default with { Range = EngageRange.Max, Priority = FirePriority.Nearest }),
         };
         groups.RemoveAll(g => g.Id > 3 && g.Members.Count == 0);
-        return new FleetState { Side = side, Groups = groups };
+        return new FleetState { Side = side, Groups = SplitSquadrons(w, groups) };
+    }
+
+    /// <summary>
+    /// Grande bataille : un groupe de plus de <see cref="GameData.Tuning.SquadronSize"/> coques devient plusieurs
+    /// escadres (« Ligne 1 », « Ligne 2 »…), qui choisissent chacune leur cible et leur formation. Chaque escadre
+    /// prend une tranche contiguë de chaque rôle du groupe : mixte, et compacte au déploiement. La première
+    /// garde l'id du groupe (les manœuvres l'adressent), les suivantes prennent des ids à partir de 100.
+    /// </summary>
+    static List<Group> SplitSquadrons(World w, List<Group> groups)
+    {
+        var output = new List<Group>(groups.Count);
+        var nextId = 100;
+        foreach (var g in groups)
+        {
+            var size = GameData.Tuning.SquadronSize;
+            if (g.Members.Count <= size)
+            {
+                output.Add(g);
+                continue;
+            }
+            var count = (g.Members.Count + size - 1) / size;
+            var byRole = g.Members.GroupBy(id => w.ShipById(id).Class.Role).Select(r => r.ToList()).ToList();
+            for (var k = 0; k < count; k++)
+            {
+                var members = new List<int>();
+                foreach (var role in byRole)
+                {
+                    var from = role.Count * k / count;
+                    var to = role.Count * (k + 1) / count;
+                    members.AddRange(role.GetRange(from, to - from));
+                }
+                output.Add(new Group
+                {
+                    Id = k == 0 ? g.Id : nextId++,
+                    Name = $"{g.Name} {k + 1}",
+                    Members = members,
+                    Formation = g.Formation,
+                    Doctrine = g.Doctrine,
+                });
+            }
+        }
+        return output;
     }
 
     public static Group? GroupOf(FleetState f, int shipId) => f.Groups.Find(g => g.Members.Contains(shipId));
@@ -212,6 +254,7 @@ public static class FleetSystem
             : g.MovePoint is { } mp ? Vec.Normalize(mp - anchorPos)
             : w.Ships[anchor].Fwd;
         var slots = FormationSlots(w, g, anchor, fwdDir);
+        var (cruise, cruiseDir) = CruiseOf(w, anchor, target, g.MovePoint);
 
         foreach (var id in g.Members)
         {
@@ -219,6 +262,13 @@ public static class FleetSystem
             if (i < 0 || !w.Ships[i].IsActive || f.Detached.Contains(id))
                 continue;
             ref var s = ref w.Ships[i];
+            if (s.Cruise && !cruise)
+            {
+                // Sortie de croisière : la coque retombe à sa vitesse de combat, dans l'axe du vol.
+                s.Vel = Vec.Scale(s.CruiseDir, s.Class.Speed);
+                s.AngVel = float3.Zero;
+            }
+            (s.Cruise, s.CruiseDir) = (cruise && s.Class.Mobile, cruiseDir);
             if (s.HasHangar)
                 s.Hangar.Mode = g.Doctrine.Drones;
             if (g.Doctrine.RetreatAt > 0 && s.Hull / s.HullMax < g.Doctrine.RetreatAt)
@@ -298,6 +348,26 @@ public static class FleetSystem
             }
         }
         w.Issue(s.Id, o, queue: false, IssueSource.Fleet);
+    }
+
+    /// <summary>
+    /// Croisière d'une escadre (grande bataille seulement : scénario à départs tirés). Elle file tant que
+    /// l'ennemi le plus proche de son ancre est loin (hystérésis entre CruiseEnter et CruiseExit), vers sa
+    /// cible, ou à défaut vers son point de destination.
+    /// </summary>
+    static (bool Cruise, float3 Dir) CruiseOf(World w, int anchor, int target, float3? movePoint)
+    {
+        if (w.Scenario.SpawnPoints.Length == 0)
+            return (false, default);
+        ref readonly var a = ref w.Ships[anchor];
+        var nearest = NearestEnemy(w, a);
+        var d = nearest != 0 ? Vec.Dist(w.ShipById(nearest).Pos, a.Pos) : float.PositiveInfinity;
+        var cruise = d > (a.Cruise ? GameData.Tuning.CruiseExit : GameData.Tuning.CruiseEnter);
+        var goal = target >= 0 ? w.Ships[target].Pos : nearest != 0 ? w.ShipById(nearest).Pos : movePoint ?? a.Pos;
+        var to = goal - a.Pos;
+        if (Vec.LenSq(to) < 1)
+            return (false, default);
+        return (cruise, Vec.Normalize(to));
     }
 
     static int NearestEnemy(World w, in Ship s)

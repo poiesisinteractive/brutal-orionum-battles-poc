@@ -50,7 +50,11 @@ public sealed partial class World
             var fleet = side == Side.Coalition ? coalition : clans;
             nameIndex.Fill(-1);
             var basePos = Home(side);
-            var facing = side == Side.Coalition ? 1f : -1f;
+            // Repère de déploiement tourné vers l'ennemi (à plat). Pour les départs du raid (axe z), c'est
+            // exactement le (x·f, y, z·f) du TS : les termes nuls s'ajoutent sans arrondi.
+            var toEnemy = Home(side == Side.Coalition ? Side.Clans : Side.Coalition) - basePos;
+            var facingDir = Vec.Normalize(new float3(toEnemy.X, 0, toEnemy.Z));
+            var deployRight = Vec.Cross(Vec.Up, facingDir);
 
             var roles = new List<Role>();
             foreach (var classId in fleet)
@@ -80,9 +84,9 @@ public sealed partial class World
                     var y = (i % 3 - 1) * 30f + (row % 3 - 1) * gap * 0.5f;
                     var z = RankZ(role) - row * gap * 0.8f;
                     var slot = useClassic ? classic![i] : new float3(x, y, z);
-                    var pos = basePos + new float3(slot.X * facing, slot.Y, slot.Z * facing);
+                    var pos = basePos + Vec.Scale(deployRight, slot.X) + Vec.Scale(Vec.Up, slot.Y) + Vec.Scale(facingDir, slot.Z);
                     var name = ++nameIndex[(int)classId];
-                    AddShip(classId, name, pos, new float3(0, 0, facing));
+                    AddShip(classId, name, pos, facingDir);
                 }
             }
         }

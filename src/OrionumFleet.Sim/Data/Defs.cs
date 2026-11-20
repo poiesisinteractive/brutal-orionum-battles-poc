@@ -114,7 +114,8 @@ public sealed record ShipClassDef
 }
 
 /// <summary>Un puits de gravité tel que le scénario le pose.</summary>
-public sealed record WellDef(string Name, float3 Pos, float Core, float Pull, float Reach);
+/// <param name="Planet">Une planète ou une lune : un obstacle (cœur infranchissable qui arrête les tirs), sans attraction.</param>
+public sealed record WellDef(string Name, float3 Pos, float Core, float Pull, float Reach, bool Planet = false);
 
 public sealed record ScenarioDef
 {
@@ -128,6 +129,12 @@ public sealed record ScenarioDef
     public required float RetreatRadius { get; init; }
     /// <summary>Puits posés quand le pilier Terrain est actif.</summary>
     public required WellDef[] Wells { get; init; }
+    /// <summary>
+    /// Points de départ possibles (grande bataille) : chaque camp en tire un de la graine, à au moins
+    /// <see cref="MinSpawnSeparation"/> l'un de l'autre. Vide : les départs fixes du scénario.
+    /// </summary>
+    public float3[] SpawnPoints { get; init; } = [];
+    public float MinSpawnSeparation { get; init; }
 }
 
 /// <summary>Piliers Orionum activables pour une bataille.</summary>

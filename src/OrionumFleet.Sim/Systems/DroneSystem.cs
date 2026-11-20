@@ -131,6 +131,13 @@ public static class DroneSystem
             }
         }
         var def = w.DroneDefOf(d);
+        if (linked && w.Ships[ci].Cruise)
+        {
+            // Le porteur file en croisière : l'essaim l'accompagne à sa vitesse.
+            d.Fwd = w.Ships[ci].Fwd;
+            f.Vel = w.Ships[ci].Vel;
+            return;
+        }
 
         d.RetargetIn -= dt;
         if (d.RetargetIn <= 0)

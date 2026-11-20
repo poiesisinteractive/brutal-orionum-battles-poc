@@ -29,3 +29,20 @@ Après S4, le portage change de cap pour profiter de BRUTAL.
 | Orionum (S5) | **Reporté.** Les capacités Orionum (Horloge, fronde, élan) et leur IA attendront. |
 | Priorité | La piste **« Grande bataille »** : une bataille géante, d'abord pour la regarder. On commence par l'échelle (flottes de N coques en formations), puis le rendu de masse (instancié) et la sim de masse (grille spatiale, JobScheduler). L'IA (S6) vient ensuite. |
 | Fidélité | **Libre** dès qu'il s'agit de la masse. On peut simplifier les règles du proto en O(n²) tant que la bataille reste crédible. Les tests de parité restent un garde-fou à l'échelle de l'Escarmouche : un écart doit être voulu et documenté. |
+
+## Révision du 2026-11-20 : la bataille à l'échelle d'un système
+
+| Sujet | Décision |
+| --- | --- |
+| Effectifs | **Réglables jusqu'à 2 000 coques par camp**, avec la composition de l'Escarmouche. Il faut rester fluide à 500 contre 500. |
+| Champ de bataille | **À l'échelle d'un système (1 000 km et plus).** |
+| Système | **Wolf 359 stylisé** : une naine rouge en fond, 2 ou 3 planètes géantes de milliers de km de rayon et quelques lunes, placées à la main. |
+| Planètes | **Décor et obstacle** : on ne les traverse pas, les coques les contournent et elles bloquent les tirs. Pas de gravité. |
+| Puits de gravité | **Retirés** de cette bataille pour le moment. |
+| Objectif | **Annihilation** : la dernière flotte debout l'emporte. Pas de Tanière. |
+| Départ | **Tiré de la graine** : positions de départ des flottes, à des centaines de km l'une de l'autre, près des planètes. |
+| Transit | **Croisière** : hors combat, les coques filent à 50 à 100 fois leur vitesse. La croisière se coupe dès qu'un ennemi est à quelques km. |
+| Temps | **Accélération de ×1 à ×64**, avec la vitesse effective affichée quand la machine ne suit plus. |
+| Sélection | **Un clic sur un vaisseau** ouvre sa fiche complète (coque, 6 faces, sous-systèmes, armes, ordre, cible, bilan). On peut aussi suivre le vaisseau à la caméra, voir ses lignes de ciblage, ses portées et ses drones, et mettre en surbrillance son groupe de flotte avec l'état du groupe. |
+| Vue lointaine | **Icônes tactiques** : en dézoomant, chaque vaisseau devient une icône de classe colorée par camp. |
+| IA | **Pas encore.** En attendant S6, chaque groupe fait route en croisière vers le groupe ennemi le plus proche, puis engage en ciblage automatique. |

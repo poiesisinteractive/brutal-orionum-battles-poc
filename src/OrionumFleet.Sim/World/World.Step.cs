@@ -33,9 +33,10 @@ public sealed partial class World
 
     long _phaseStart;
 
-    // Index spatiaux, reconstruits au début de chaque pas (voir EntityIndex pour les marges).
-    readonly EntityIndex _shipGrid = new(cellSize: 500, pad: 40);
-    readonly EntityIndex _droneGrid = new(cellSize: 300, pad: 25);
+    // Index spatiaux, reconstruits au début de chaque pas (voir EntityIndex pour les marges). Coques et drones :
+    // la croisière les déplace de 150 m par pas (3 km/s).
+    readonly EntityIndex _shipGrid = new(cellSize: 500, pad: 160);
+    readonly EntityIndex _droneGrid = new(cellSize: 300, pad: 160);
     readonly EntityIndex _projectileGrid = new(cellSize: 300, pad: 150);
     bool _inStep;
 

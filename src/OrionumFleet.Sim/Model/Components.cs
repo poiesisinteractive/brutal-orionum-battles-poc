@@ -222,6 +222,9 @@ public struct Ship
     public float Fling;
     /// <summary>A sauté hors de la bataille (retraite réussie) : pas mort, mais parti.</summary>
     public bool Withdrawn;
+    /// <summary>En croisière (grande bataille) : vol rapide hors combat dans la direction <see cref="CruiseDir"/>, posée par l'escadre.</summary>
+    public bool Cruise;
+    public float3 CruiseDir;
     public ShipStats Stats;
     /// <summary>Remorquée par ce remorqueur (lot 1 : toujours 0 ici).</summary>
     public int TowedBy;
@@ -326,6 +329,8 @@ public struct GravityWell
     public float Total;
     public float Eye;
     public int SourceId;
+    /// <summary>Planète ou lune : un obstacle sans attraction (grande bataille).</summary>
+    public bool Planet;
 }
 
 /// <summary>Instantané d'une coque pour la fenêtre rétroactive.</summary>

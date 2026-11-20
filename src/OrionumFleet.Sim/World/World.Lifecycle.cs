@@ -300,7 +300,19 @@ public sealed partial class World
         Array.Resize(ref _historyCount, capacity);
     }
 
-    /// <summary>Fin de bataille (raid) : Tanière détruite, flotte Coalition perdue, ou temps écoulé.</summary>
+    float FleetHull(Side side)
+    {
+        float sum = 0;
+        foreach (ref readonly var s in Ships.AsSpan())
+            if (s.Side == side && s.IsActive)
+                sum += s.Hull;
+        return sum;
+    }
+
+    /// <summary>
+    /// Fin de bataille. Raid : Tanière détruite, flotte Coalition perdue, ou temps écoulé. Annihilation : la
+    /// dernière flotte debout l'emporte (au temps limite, la plus grosse coque restante).
+    /// </summary>
     internal void CheckVictory()
     {
         bool AliveFleet(Side side)
@@ -309,6 +321,21 @@ public sealed partial class World
                 if (s.Side == side && s.Alive && !s.Withdrawn && s.Class.Role != Role.Convoy && s.Class.Mobile)
                     return true;
             return false;
+        }
+
+        if (Scenario.Objective == Objective.Annihilation)
+        {
+            var coalition = AliveFleet(Side.Coalition);
+            var clans = AliveFleet(Side.Clans);
+            if (!coalition && !clans)
+                Result = new BattleResult(Side.Coalition, ResultReason.MutualDestruction, Time);
+            else if (!coalition)
+                Result = new BattleResult(Side.Clans, ResultReason.FleetLost, Time);
+            else if (!clans)
+                Result = new BattleResult(Side.Coalition, ResultReason.FleetLost, Time);
+            else if (Time >= TimeLimit)
+                Result = new BattleResult(FleetHull(Side.Coalition) >= FleetHull(Side.Clans) ? Side.Coalition : Side.Clans, ResultReason.Timeout, Time);
+            return;
         }
 
         var depot = ShipIndex(DepotId);

@@ -291,11 +291,53 @@ public static class GameData
         ],
     };
 
+    const float Km = 1000;
+
+    /// <summary>
+    /// Grande bataille à l'échelle du système de Wolf 359 (1 u = 1 m). La géante gazeuse fait le « sol » à
+    /// 200 km sous le plan de bataille ; deux lunes coupent le champ, une planète rocheuse ferme l'horizon.
+    /// Pas de puits : les astres sont des obstacles (pas d'attraction). Les flottes partent de deux points
+    /// tirés de la graine, à au moins 300 km l'une de l'autre.
+    /// </summary>
+    static readonly ScenarioDef System = Raid with
+    {
+        Id = ScenarioId.Wolf359System,
+        Objective = Objective.Annihilation,
+        TimeLimit = 4 * 3600,
+        DepotPos = float3.Zero,
+        RetreatRadius = 2 * Km,
+        Wells =
+        [
+            new("Wolf 359 b", new float3(0, -5200 * Km, 0), Core: 5000 * Km, Pull: 0, Reach: 0, Planet: true),
+            new("Mirande", new float3(1400 * Km, 250 * Km, -2600 * Km), Core: 1200 * Km, Pull: 0, Reach: 0, Planet: true),
+            new("Ixion", new float3(-60 * Km, 20 * Km, 40 * Km), Core: 70 * Km, Pull: 0, Reach: 0, Planet: true),
+            new("Talos", new float3(160 * Km, -30 * Km, -170 * Km), Core: 35 * Km, Pull: 0, Reach: 0, Planet: true),
+        ],
+        SpawnPoints =
+        [
+            new(-320 * Km, 10 * Km, -260 * Km), new(330 * Km, -5 * Km, 240 * Km), new(-280 * Km, 0, 300 * Km),
+            new(300 * Km, 15 * Km, -310 * Km), new(0, 20 * Km, -420 * Km), new(20 * Km, -10 * Km, 430 * Km),
+            new(-430 * Km, 0, 20 * Km), new(440 * Km, 5 * Km, -30 * Km),
+        ],
+        MinSpawnSeparation = 300 * Km,
+    };
+
     public static ScenarioDef Scenario(ScenarioId id) => id switch
     {
         ScenarioId.WellField => WellField,
+        ScenarioId.Wolf359System => System,
         _ => Raid,
     };
+
+    /// <summary>Une flotte de <paramref name="count"/> coques, dans les proportions de l'Escarmouche (motif répété, tronqué).</summary>
+    public static ShipClassId[] Fleet(Side side, int count)
+    {
+        var pattern = side == Side.Coalition ? SkirmishCoalition : SkirmishClans;
+        var fleet = new ShipClassId[Math.Max(0, count)];
+        for (var i = 0; i < fleet.Length; i++)
+            fleet[i] = pattern[i % pattern.Length];
+        return fleet;
+    }
 
     // --- Réglages --------------------------------------------------------------
 
@@ -314,6 +356,19 @@ public static class GameData
         public const float DamageScale = 0.65f;
         /// <summary>Pas fixe de la simulation (s).</summary>
         public const float Dt = 1f / 20;
+        /// <summary>
+        /// Croisière (grande bataille) : hors combat, une escadre file à cette vitesse (m/s), la même pour toutes
+        /// ses coques (la formation se garde). Elle y passe quand l'ennemi le plus proche est au-delà de
+        /// CruiseEnter et en sort sous CruiseExit : juste avant la portée des armes (2 km au plus), pour que
+        /// l'approche à vitesse de combat reste courte.
+        /// </summary>
+        public const float CruiseSpeed = 3000;
+        public const float CruiseEnter = 16_000;
+        public const float CruiseExit = 12_000;
+        /// <summary>Marge de contournement des planètes en croisière (m), au-delà de leur rayon.</summary>
+        public const float CruisePlanetMargin = 8_000;
+        /// <summary>Au-delà de ce nombre de coques, un groupe de rôle est découpé en escadres de cette taille.</summary>
+        public const int SquadronSize = 24;
         /// <summary>Cadence et profondeur des instantanés de la fenêtre rétroactive.</summary>
         public const float HistoryInterval = 0.5f;
         public const float HistoryDepth = 10;

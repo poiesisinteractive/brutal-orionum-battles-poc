@@ -108,7 +108,7 @@ public static class Movement
     internal static void Plan(World w, int index, ref ShipFrame f)
     {
         ref readonly var s = ref w.Ships[index];
-        if (!f.Move || !s.Class.Mobile)
+        if (!f.Move || !s.Class.Mobile || s.Cruise)
             return;
         var order = s.Orders.Count > 0 ? s.Orders[0] : Order.Hold;
         var st = Steer(w, s, order);
@@ -130,7 +130,50 @@ public static class Movement
         s.PrevFwd = s.Fwd;
         if (!s.Class.Mobile)
             return;
-        FlightComputer(w, ref s, f.Steering, f.Order, f.Pointing, f.Dt);
+        if (s.Cruise)
+            CruiseStep(w, ref s, f.Dt);
+        else
+            FlightComputer(w, ref s, f.Steering, f.Order, f.Pointing, f.Dt);
+    }
+
+    /// <summary>
+    /// Croisière (grande bataille) : vol cinématique à <see cref="GameData.Tuning.CruiseSpeed"/> dans la direction
+    /// de l'escadre, le nez dans l'axe, en contournant les astres par le côté le plus proche.
+    /// </summary>
+    static void CruiseStep(World w, ref Ship s, float dt)
+    {
+        var dir = Vec.LenSq(s.CruiseDir) > 1e-6f ? Vec.Normalize(s.CruiseDir) : s.Fwd;
+        foreach (ref readonly var g in w.Wells.AsSpan())
+        {
+            if (g.Core <= 0)
+                continue;
+            var clearance = g.Core + s.Class.Radius + GameData.Tuning.CruisePlanetMargin;
+            var to = g.Pos - s.Pos;
+            var dist = Vec.Len(to);
+            if (dist < clearance)
+            {
+                // Déjà dans la marge : s'écarter du centre.
+                dir = Vec.Normalize(dir + Vec.Scale(Vec.Normalize(Vec.Scale(to, -1)), 2 * (clearance - dist) / clearance + 0.5f));
+                continue;
+            }
+            var along = Vec.Dot(to, dir);
+            if (along <= 0 || along > dist + clearance)
+                continue;
+            var closest = to - Vec.Scale(dir, along);
+            var miss = Vec.Len(closest);
+            if (miss >= clearance)
+                continue;
+            // L'astre est sur la route : virer vers le côté où l'on passe déjà (le plus court), plus fort s'il est proche.
+            var side = miss > 1 ? Vec.Scale(closest, -1 / miss) : Vec.Normalize(Vec.Cross(dir, Vec.Up));
+            var urgency = (clearance - miss) / clearance * MathF.Min(1, clearance / MathF.Max(1, along - g.Core));
+            dir = Vec.Normalize(dir + Vec.Scale(side, 1.5f * urgency));
+        }
+        s.Fwd = dir;
+        s.AngVel = float3.Zero;
+        s.Vel = Vec.Scale(dir, GameData.Tuning.CruiseSpeed);
+        s.Pos += Vec.Scale(s.Vel, dt);
+        s.Thrust = 1;
+        s.RcsAcc = float3.Zero;
     }
 
     // -------------------------------------------------------------------------
