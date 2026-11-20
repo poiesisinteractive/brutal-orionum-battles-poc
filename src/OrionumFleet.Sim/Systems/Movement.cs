@@ -11,18 +11,30 @@ namespace OrionumFleet.Sim;
 /// grosses coques doivent anticiper. L'ordinateur de vol transforme les ordres (vitesse et cap voulus)
 /// en poussée et en couple.
 ///
-/// Les boucles sur toutes les coques (menace la plus proche, distance de sécurité, séparation) sont
-/// portées telles quelles, en O(n²) ; le passage à la grille spatiale se fera en S7, mesures à l'appui.
+/// Les voisins (menace la plus proche, distance de sécurité, séparation) viennent des index spatiaux du
+/// monde. Le pas se fait en deux passes parallèles (<see cref="Plan"/> puis <see cref="Fly"/>) : chaque
+/// coque planifie en lisant les autres telles qu'elles étaient, puis vole en n'écrivant que son propre état.
 /// </summary>
 public static class Movement
 {
-    struct Steering
+    internal struct Steering
     {
         public float3 Vel;
         /// <summary>Cap voulu. null = face à la direction du déplacement.</summary>
         public float3? Face;
 
         public Steering(float3 vel, float3? face) => (Vel, Face) = (vel, face);
+    }
+
+    /// <summary>État transitoire d'une coque entre les passes du mouvement.</summary>
+    internal struct ShipFrame
+    {
+        /// <summary>La coque bouge à ce pas (active, pas figée, pas remorquée).</summary>
+        public bool Move;
+        public float Dt;
+        public Order Order;
+        public Steering Steering;
+        public float3? Pointing;
     }
 
     /// <summary>Le <c>REINFORCE.dazeSpeed</c> du lot 3 : vitesse d'une coque sonnée au sortir d'un saut.</summary>
@@ -76,23 +88,49 @@ public static class Movement
         }
     }
 
+    /// <summary>
+    /// Un pas de mouvement complet pour une seule coque (tests et appels isolés). Le pas du monde, lui, passe
+    /// par <see cref="Plan"/> et <see cref="Fly"/> pour toutes les coques à la fois.
+    /// </summary>
     public static void UpdateMovement(World w, int index, float dt)
     {
-        ref var s = ref w.Ships[index];
-        s.PrevPos = s.Pos;
-        s.PrevFwd = s.Fwd;
-        if (!s.Class.Mobile)
-            return;
+        var frame = new ShipFrame { Move = true, Dt = dt };
+        Plan(w, index, ref frame);
+        Fly(w, index, ref frame);
+        if (frame.Order.Type == OrderType.Retreat && Vec.Dist(w.Ships[index].Pos, w.Home(w.Ships[index].Side)) < w.Scenario.RetreatRadius)
+            w.WithdrawShip(index);
+    }
 
+    /// <summary>
+    /// Passe 1 (parallèle) : ce que la coque veut faire, en lisant les autres coques sans rien modifier.
+    /// N'écrit que dans <paramref name="f"/>.
+    /// </summary>
+    internal static void Plan(World w, int index, ref ShipFrame f)
+    {
+        ref readonly var s = ref w.Ships[index];
+        if (!f.Move || !s.Class.Mobile)
+            return;
         var order = s.Orders.Count > 0 ? s.Orders[0] : Order.Hold;
         var st = Steer(w, s, order);
         Separate(w, s, ref st);
         if (order.Type != OrderType.Ram)
             KeepStandoff(w, s, ref st, order);
-        FlightComputer(w, ref s, st, order, dt);
+        f.Order = order;
+        f.Steering = st;
+        f.Pointing = ResolvePointing(w, s, order, st);
+    }
 
-        if (order.Type == OrderType.Retreat && Vec.Dist(s.Pos, w.Home(s.Side)) < w.Scenario.RetreatRadius)
-            w.WithdrawShip(index);
+    /// <summary>Passe 2 (parallèle) : l'ordinateur de vol applique le plan. N'écrit que dans la coque <paramref name="index"/>.</summary>
+    internal static void Fly(World w, int index, ref ShipFrame f)
+    {
+        if (!f.Move)
+            return;
+        ref var s = ref w.Ships[index];
+        s.PrevPos = s.Pos;
+        s.PrevFwd = s.Fwd;
+        if (!s.Class.Mobile)
+            return;
+        FlightComputer(w, ref s, f.Steering, f.Order, f.Pointing, f.Dt);
     }
 
     // -------------------------------------------------------------------------
@@ -125,7 +163,8 @@ public static class Movement
         return MathF.Max(0, a * (-t + MathF.Sqrt(t * t + 2 * MathF.Max(0, d) / a)));
     }
 
-    static void FlightComputer(World w, ref Ship s, in Steering st, in Order order, float dt)
+    /// <param name="pointing">Le cap imposé par le mode de pointage (calculé à la passe de plan), ou null.</param>
+    static void FlightComputer(World w, ref Ship s, in Steering st, in Order order, float3? pointing, float dt)
     {
         var cls = s.Class;
         var main = MainAccel(s);
@@ -146,7 +185,7 @@ public static class Movement
 
         // Cap : un pointage explicite l'emporte ; sinon le moteur principal s'aligne sur la poussée quand
         // le changement voulu est grand, et sur la direction du déplacement sinon.
-        var face = ResolvePointing(w, s, order, st);
+        var face = pointing;
         if (face is null)
         {
             if (dvLen > main * 0.8f)

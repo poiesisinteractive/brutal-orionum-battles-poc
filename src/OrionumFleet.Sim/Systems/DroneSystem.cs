@@ -2,6 +2,23 @@ using Brutal.Numerics;
 
 namespace OrionumFleet.Sim;
 
+/// <summary>État transitoire d'un drone entre les passes d'un pas (voir <see cref="DroneSystem.UpdateDrones"/>).</summary>
+internal struct DroneFrame
+{
+    /// <summary>Le drone n'était pas vivant au début de la passe : rien à faire.</summary>
+    public bool Skip;
+    /// <summary>Orphelin depuis trop longtemps : il s'éteint (pendant la passe d'action).</summary>
+    public bool Kill;
+    /// <summary>Index du puits dont le cœur l'a avalé pendant le déplacement, ou -1.</summary>
+    public int Core;
+    /// <summary>Index du porteur, ou -1 ; et si le lien tient encore.</summary>
+    public int Carrier;
+    public bool Linked;
+    /// <summary>Vitesse calculée à la réflexion, appliquée au déplacement (les autres lisent l'ancienne).</summary>
+    public float3 Vel;
+    public float Dt;
+}
+
 /// <summary>
 /// Hangars et drones, port de <c>drones.ts</c>. Les drones sont des cores IA bridés (canon § 9.2) : ils
 /// partent par vagues quand l'ennemi approche, font des passes d'attaque sur les coques (sous les boucliers,
@@ -58,20 +75,58 @@ public static class DroneSystem
         return false;
     }
 
-    /// <param name="dt">Pas local en double (<see cref="World.DtExact"/> × échelle de temps) : il vide les minuteries.</param>
-    public static void UpdateDrone(World w, int index, double dt)
+    /// <summary>
+    /// Tous les drones d'un pas, en trois passes (le TS les traite un par un, chacun voyant les précédents déjà
+    /// déplacés ; ici chaque passe voit l'état de la passe d'avant) :
+    /// <list type="number">
+    /// <item>réflexion, en parallèle : orphelinage, choix de cible, cap et vitesse. Chaque drone n'écrit que ses
+    /// propres champs (sauf <c>Pos</c>, <c>Vel</c> et <c>Alive</c>, que les autres lisent) ;</item>
+    /// <item>déplacement, en parallèle : position et cœur de puits traversé ;</item>
+    /// <item>action, en séquence dans l'ordre des index : extinction, avalement, tirs (RNG, dégâts, événements).</item>
+    /// </list>
+    /// Le résultat ne dépend ni du découpage ni du nombre de cœurs.
+    /// </summary>
+    /// <param name="dt">Pas exact en double ; chaque drone le multiplie par son échelle de temps.</param>
+    public static void UpdateDrones(World w, double dt)
+    {
+        var count = w.Drones.Count;
+        if (w.DroneFrames.Length < count)
+            w.DroneFrames = new DroneFrame[Math.Max(count, w.DroneFrames.Length * 2)];
+        SimJobs.For(count, (start, end) =>
+        {
+            for (var i = start; i < end; i++)
+                Think(w, i, dt);
+        });
+        SimJobs.For(count, (start, end) =>
+        {
+            for (var i = start; i < end; i++)
+                Move(w, i);
+        });
+        for (var i = 0; i < count; i++)
+            Act(w, i, dt);
+    }
+
+    /// <summary>Passe 1 : cible, cap et vitesse voulue (sans déplacer le drone).</summary>
+    static void Think(World w, int index, double worldDt)
     {
         ref var d = ref w.Drones[index];
+        ref var f = ref w.DroneFrames[index];
+        f = new DroneFrame { Skip = !d.Alive, Core = -1, Carrier = -1 };
+        if (f.Skip)
+            return;
+        var dt = worldDt * d.TimeScale;
         var fdt = (float)dt;
+        f.Dt = fdt;
         var ci = w.ShipIndex(d.CarrierId);
         var linked = ci >= 0 && w.Ships[ci].IsActive;
+        (f.Carrier, f.Linked) = (ci, linked);
         if (!linked)
         {
             // Lien perdu : le core bridé garde son dernier comportement, puis s'éteint.
             d.OrphanTime += dt;
             if (d.OrphanTime > GameData.Tuning.DroneOrphanLifetime)
             {
-                w.DamageDrone(ref d, d.Hp);
+                f.Kill = true;
                 return;
             }
         }
@@ -80,24 +135,14 @@ public static class DroneSystem
         d.RetargetIn -= dt;
         if (d.RetargetIn <= 0)
         {
-            d.RetargetIn = 0.5 + w.Rng.NextDouble() * 0.3;
+            // Le TS tire ce délai du RNG global ; ici un hachage (id, pas), pour que la passe reste parallèle.
+            d.RetargetIn = 0.5 + Hash01(d.Id, w.Tick) * 0.3;
             d.TargetId = PickDroneTarget(w, d, linked ? ci : -1);
         }
 
-        var target = d.TargetId != 0 ? w.Get(d.TargetId) : default;
-        var targetAlive = target.Kind switch
-        {
-            EntityKind.Ship => w.Ships[target.Index].IsActive,
-            EntityKind.Drone => w.Drones[target.Index].Alive,
-            EntityKind.Projectile => w.Projectiles[target.Index].Alive,
-            _ => false,
-        };
+        var (targetAlive, target, tPos, tVel) = Target(w, d.TargetId);
         if (!targetAlive)
             d.TargetId = 0;
-        var (tPos, tVel) = !targetAlive ? default
-            : target.Kind == EntityKind.Ship ? (w.Ships[target.Index].Pos, w.Ships[target.Index].Vel)
-            : target.Kind == EntityKind.Drone ? (w.Drones[target.Index].Pos, w.Drones[target.Index].Vel)
-            : (w.Projectiles[target.Index].Pos, w.Projectiles[target.Index].Vel);
 
         float3 desired;
         var phase = d.Id * 2.399f; // angle d'or : l'essaim ne s'effondre pas en un point
@@ -152,23 +197,47 @@ public static class DroneSystem
                     d.Fling = GameData.Terrain.Sling.FlingTime;
         }
         d.Fling = MathF.Max(0, d.Fling - fdt);
-        d.Vel = Vec.Scale(d.Fwd, def.Speed * (d.Fling > 0 ? GameData.Terrain.Sling.SpeedMult : 1));
+        f.Vel = Vec.Scale(d.Fwd, def.Speed * (d.Fling > 0 ? GameData.Terrain.Sling.SpeedMult : 1));
+    }
+
+    /// <summary>Passe 2 : déplacement, et cœur de puits traversé.</summary>
+    static void Move(World w, int index)
+    {
+        ref var f = ref w.DroneFrames[index];
+        if (f.Skip || f.Kill)
+            return;
+        ref var d = ref w.Drones[index];
+        d.Vel = f.Vel;
         d.PrevPos = d.Pos;
-        d.Pos += Vec.Scale(d.Vel, fdt);
-        if (wells.Length > 0)
+        d.Pos += Vec.Scale(d.Vel, f.Dt);
+        if (w.Wells.Count > 0)
+            f.Core = Ballistics.CoreOnSegment(w.Wells.AsSpan(), d.PrevPos, d.Pos);
+    }
+
+    /// <summary>Passe 3, séquentielle : extinction, avalement, puis tir sur la cible si elle vit encore.</summary>
+    static void Act(World w, int index, double worldDt)
+    {
+        ref var f = ref w.DroneFrames[index];
+        ref var d = ref w.Drones[index];
+        if (f.Skip || !d.Alive) // déjà abattu plus tôt dans cette passe
+            return;
+        if (f.Kill)
         {
-            var core = Ballistics.CoreOnSegment(wells, d.PrevPos, d.Pos);
-            if (core >= 0)
-            {
-                // Comme le TS : avalé sans passer par le compteur des projectiles.
-                d.Alive = false;
-                w.Emit(new SimEvent { Type = SimEventType.Swallowed, At = d.Pos, OtherId = wells[core].Id, Value = 5 });
-            }
+            w.DamageDrone(ref d, d.Hp);
+            return;
+        }
+        if (f.Core >= 0)
+        {
+            // Comme le TS : avalé sans passer par le compteur des projectiles, et il peut encore tirer ce pas.
+            d.Alive = false;
+            w.Emit(new SimEvent { Type = SimEventType.Swallowed, At = d.Pos, OtherId = w.Wells[f.Core].Id, Value = 5 });
         }
 
-        d.Cooldown -= dt;
+        d.Cooldown -= worldDt * d.TimeScale;
+        var (targetAlive, target, tPos, _) = Target(w, d.TargetId);
         if (d.Cooldown > 0 || !targetAlive)
             return;
+        var def = w.DroneDefOf(d);
         if (target.Kind == EntityKind.Projectile)
         {
             // Les drones d'écran abattent les bombes en approche (canons sur cardan, comme contre les drones).
@@ -203,10 +272,38 @@ public static class DroneSystem
                 {
                     w.Stats.DroneShipHits++;
                     var fromDir = Vec.Normalize(d.Pos - tPos);
-                    Combat.DroneStrike(w, target.Index, def.Damage * GameData.Tuning.DamageScale, fromDir, DroneAim(w, ci),
-                        linked ? w.Ships[ci].Id : 0);
+                    Combat.DroneStrike(w, target.Index, def.Damage * GameData.Tuning.DamageScale, fromDir, DroneAim(w, f.Carrier),
+                        f.Linked ? w.Ships[f.Carrier].Id : 0);
                 }
             }
+        }
+    }
+
+    /// <summary>La cible d'un drone (coque, drone ou projectile) : vivante ou non, sa référence, sa position et sa vitesse.</summary>
+    static (bool Alive, EntityRef Ref, float3 Pos, float3 Vel) Target(World w, int id)
+    {
+        var target = id != 0 ? w.Get(id) : default;
+        return target.Kind switch
+        {
+            EntityKind.Ship when w.Ships[target.Index].IsActive => (true, target, w.Ships[target.Index].Pos, w.Ships[target.Index].Vel),
+            EntityKind.Drone when w.Drones[target.Index].Alive => (true, target, w.Drones[target.Index].Pos, w.Drones[target.Index].Vel),
+            EntityKind.Projectile when w.Projectiles[target.Index].Alive => (true, target, w.Projectiles[target.Index].Pos, w.Projectiles[target.Index].Vel),
+            _ => (false, target, default, default),
+        };
+    }
+
+    /// <summary>Nombre pseudo-aléatoire dans [0, 1) tiré de (id, pas) : déterministe et sans état partagé.</summary>
+    static double Hash01(int id, int tick)
+    {
+        unchecked
+        {
+            var h = (uint)id * 0x9E3779B1u ^ (uint)tick * 0x85EBCA77u;
+            h ^= h >> 16;
+            h *= 0x7FEB352Du;
+            h ^= h >> 15;
+            h *= 0x846CA68Bu;
+            h ^= h >> 16;
+            return h / 4294967296.0;
         }
     }
 

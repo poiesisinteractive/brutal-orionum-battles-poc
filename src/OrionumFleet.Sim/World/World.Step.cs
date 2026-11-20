@@ -19,6 +19,15 @@ public sealed partial class World
     /// <summary>Tampon réutilisé à chaque pas : drones vivants par id de porteur.</summary>
     readonly Dictionary<int, int> _activeByCarrier = [];
 
+    /// <summary>État transitoire des drones entre les passes d'un pas (DroneSystem).</summary>
+    internal DroneFrame[] DroneFrames = [];
+
+    /// <summary>État transitoire des coques entre les passes du mouvement.</summary>
+    Movement.ShipFrame[] _shipFrames = [];
+
+    /// <summary>Les passes sur les coques se répartissent dès ce nombre (plus coûteuses par entité que les drones).</summary>
+    const int ShipPassFrom = 128;
+
     /// <summary>Durée de chaque phase au dernier pas (ms), indexée par <see cref="StepPhase"/>.</summary>
     public double[] PhaseMs { get; } = new double[Enum.GetValues<StepPhase>().Length];
 
@@ -100,9 +109,16 @@ public sealed partial class World
         // S5 : Orionum.Step, Terrain.Step.
         EndPhase(StepPhase.Fleet);
 
-        for (var i = 0; i < Ships.Count; i++)
+        // Mouvement : les ordres en séquence, puis le plan et le vol en passes parallèles (voir Movement),
+        // puis les retraites (événements) en séquence.
+        var shipCount = Ships.Count;
+        if (_shipFrames.Length < shipCount)
+            _shipFrames = new Movement.ShipFrame[Math.Max(shipCount, _shipFrames.Length * 2)];
+        for (var i = 0; i < shipCount; i++)
         {
             ref var s = ref Ships[i];
+            ref var f = ref _shipFrames[i];
+            f = default;
             if (!s.IsActive)
                 continue;
             if (s.TimeScale == 0)
@@ -112,11 +128,50 @@ public sealed partial class World
                 s.PrevFwd = s.Fwd;
                 continue;
             }
-            var ldt = Dt * s.TimeScale;
+            f.Dt = Dt * s.TimeScale;
             Movement.ProcessOrders(this, ref s);
-            if (s.TowedBy == 0)
-                Movement.UpdateMovement(this, i, ldt);
-            Combat.UpdateDefences(ref Ships[i], ldt);
+            f.Move = s.TowedBy == 0;
+            f.Order.Type = OrderType.Hold; // remplacé par le plan pour les coques qui bougent
+        }
+        if (shipCount < ShipPassFrom)
+        {
+            // Petites flottes : l'ordre du TS, coque par coque (chacune voit les précédentes déjà déplacées).
+            // Les tests de trajectoire comparent ce chemin au proto.
+            for (var i = 0; i < shipCount; i++)
+            {
+                ref var f = ref _shipFrames[i];
+                Movement.Plan(this, i, ref f);
+                Movement.Fly(this, i, ref f);
+                if (f.Dt > 0)
+                    Combat.UpdateDefences(ref Ships[i], f.Dt);
+            }
+        }
+        else
+        {
+            // Grandes flottes : chaque coque planifie en voyant les autres telles qu'au début du pas, puis toutes
+            // volent. Le choix du chemin ne dépend que de la taille de la flotte : même graine, même bataille.
+            SimJobs.For(shipCount, ShipPassFrom, (start, end) =>
+            {
+                for (var i = start; i < end; i++)
+                    Movement.Plan(this, i, ref _shipFrames[i]);
+            });
+            SimJobs.For(shipCount, ShipPassFrom, (start, end) =>
+            {
+                for (var i = start; i < end; i++)
+                {
+                    ref var f = ref _shipFrames[i];
+                    Movement.Fly(this, i, ref f);
+                    if (f.Dt > 0)
+                        Combat.UpdateDefences(ref Ships[i], f.Dt);
+                }
+            });
+        }
+        for (var i = 0; i < shipCount; i++)
+        {
+            ref readonly var f = ref _shipFrames[i];
+            if (f.Move && f.Order.Type == OrderType.Retreat && Ships[i].IsActive
+                && Vec.Dist(Ships[i].Pos, Home(Ships[i].Side)) < Scenario.RetreatRadius)
+                WithdrawShip(i);
         }
         EndPhase(StepPhase.Movement);
 
@@ -131,10 +186,8 @@ public sealed partial class World
             if (d.Alive)
                 _activeByCarrier[d.CarrierId] = _activeByCarrier.GetValueOrDefault(d.CarrierId) + 1;
         DroneSystem.UpdateHangars(this, DtExact, _activeByCarrier);
-        // Les drones lancés pendant ce pas volent dès ce pas, comme dans le TS.
-        for (var i = 0; i < Drones.Count; i++)
-            if (Drones[i].Alive)
-                DroneSystem.UpdateDrone(this, i, DtExact * Drones[i].TimeScale);
+        // Les drones lancés pendant ce pas volent dès ce pas, comme dans le TS (passes parallèles, voir UpdateDrones).
+        DroneSystem.UpdateDrones(this, DtExact);
         EndPhase(StepPhase.Drones);
 
         // Les projectiles tirés pendant ce pas sont avancés dès ce pas, comme dans le TS.

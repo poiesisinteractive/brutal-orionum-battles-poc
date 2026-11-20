@@ -67,6 +67,25 @@ Le périmètre couvre environ 44 des 63 tests TS. Les autres concernent les lots
 - **Comme le TS**, un drone avalé par un cœur ne passe pas par le compteur `swallowed` (réservé aux projectiles) et peut encore tirer pendant ce pas.
 - **Lot 1 laissé de côté** : le brouillage (virage ralenti et dégâts réduits dans la bulle d'un brouilleur).
 
+### Grande bataille (après S4, à la place de S5)
+
+Banc : l'Escarmouche répétée N fois par camp, ciblage automatique, 120 s simulées. Coût moyen d'un pas pour un budget temps réel de 50 ms (20 pas par seconde) :
+
+| Bataille | Coques | Pic de drones | Avant | Après |
+| --- | --- | --- | --- | --- |
+| ×30 | 361 | 2 600 | 3,6 ms | 2,2 ms |
+| ×100 | 1 201 | 7 300 à 8 000 | 30 ms | 9 ms |
+
+- **Déploiement en blocs** au-delà de 12 coques par rang. Jusqu'à 12, c'est le rang unique du TS.
+- **Index spatiaux** (`EntityIndex`, sur `SpatialGrid`) pour les coques, les drones et les projectiles. Ils sont reconstruits au début de chaque pas, avec une marge qui couvre le déplacement d'un pas, et ajoutent les entités créées depuis. Ils servent au ciblage, à la défense ponctuelle, à la distance de sécurité, à l'évitement, aux drones, aux impacts et aux souffles.
+  - En dessous de 64 entités, pas de grille : la requête rend tout, dans l'ordre du TS.
+  - Au-delà, les résultats ne sont pas triés. Le tri coûtait plus que l'ancienne boucle dans une mêlée dense, où chaque requête rend des milliers d'entrées.
+- **Passes parallèles** sur le JobScheduler de BRUTAL (`SimJobs`). Chaque passe découpe la table en tranches, et un corps de passe n'écrit que dans les entités de sa tranche. Le résultat ne dépend ni du découpage ni du nombre de cœurs, ce que vérifie `ScaleTests`.
+  - **Drones**, en trois passes : réflexion (parallèle), déplacement (parallèle), action (séquentielle : tirs, RNG, dégâts, événements). Le délai de reciblage est tiré d'un hachage (id, pas) et non plus du RNG global. Cet écart au TS est voulu ; la parité statistique des drones tient toujours.
+  - **Mouvement**, à partir de 128 coques : plan (parallèle, chaque coque voit les autres telles qu'au début du pas), puis vol (parallèle). En dessous, l'ordre du TS (planifier puis voler, coque par coque) est gardé : les tests de trajectoire comparent ce chemin au proto.
+- **Visualiseur** : solides instanciés (deux appels de dessin pour plus de 11 000 objets à ×100), étiquettes près de la caméra, résumé par classe, explosions plafonnées.
+- **À suivre** : les armes en parallèle (2,6 ms à ×100), les pics au démarrage (JIT et croissance des tableaux), et l'IA (S6).
+
 ### Notes de V0
 - **La sim ne sait rien du visualiseur.** Il lit les tables du monde et vide les événements (`DrainEvents`) après chaque pas pour en tirer des effets datés en temps de sim. La pause fige donc aussi les explosions.
 - **Rendu de Brutal Arena**, mis à l'échelle (plan lointain à 40 000 u, brouillard et lumières ponctuelles réglés pour des distances de plusieurs milliers d'unités) et complété d'un lot de lignes émissives en additif pour les tirs, les rayons, les anneaux et la grille.

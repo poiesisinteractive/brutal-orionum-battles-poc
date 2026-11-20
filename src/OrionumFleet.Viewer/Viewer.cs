@@ -227,10 +227,11 @@ sealed class Viewer : IDisposable
                 AddEffect(e.Type, beamLife, e.At, e.Vector, 0, beamColor);
                 break;
             case SimEventType.Explosion:
-                AddEffect(e.Type, 0.7f, e.At, default, MathF.Max(6, e.Value * 2.5f), new float3(1f, 0.6f, 0.25f));
+                // Plafonnée : la destruction d'une grosse coque (taille = 2,2 rayons) ne doit pas noyer l'image.
+                AddEffect(e.Type, 0.7f, e.At, default, Math.Clamp(e.Value * 1.5f, 6, 140), new float3(1f, 0.6f, 0.25f));
                 break;
             case SimEventType.Secondary:
-                AddEffect(SimEventType.Explosion, 0.8f, e.At, default, MathF.Max(10, e.Value * 3), new float3(1f, 0.5f, 0.2f));
+                AddEffect(SimEventType.Explosion, 0.8f, e.At, default, Math.Clamp(e.Value * 1.5f, 8, 60), new float3(1f, 0.5f, 0.2f));
                 break;
             case SimEventType.Blast:
             case SimEventType.CoreBreach:
@@ -526,12 +527,13 @@ sealed class Viewer : IDisposable
                 case SimEventType.Explosion:
                 case SimEventType.ShieldHit:
                 case SimEventType.Swallowed:
-                    _renderer.DrawSphere(fx.At, fx.Size * (0.4f + 0.8f * t), fx.Color, 8 * fade * fade);
+                    _renderer.DrawSphere(fx.At, fx.Size * (0.4f + 0.8f * t), fx.Color, 5 * fade * fade);
                     break;
                 case SimEventType.Blast:
                 case SimEventType.CoreBreach:
                 case SimEventType.EmpBlast:
-                    _renderer.DrawSphere(fx.At, fx.Size * 0.25f * (1 - t * 0.5f), fx.Color, 10 * fade * fade);
+                    // Un noyau bref ; l'anneau qui s'étend montre la portée du souffle.
+                    _renderer.DrawSphere(fx.At, MathF.Min(40, fx.Size * 0.1f) * (1 - t * 0.5f), fx.Color, 6 * fade * fade * fade);
                     _renderer.Circle(fx.At, fx.Size * (0.3f + 0.7f * t), fx.Color * (4 * fade), 72);
                     break;
             }

@@ -16,7 +16,9 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | S3 Combat (armes, boucliers, sous-systèmes, bombes, balistique à travers les puits, batailles comparées au TS) | ✅ |
 | V0 Visualiseur de débug (OpenGL HDR + bloom, ImGui) | ✅ |
 | S4 Drones et hangars (vagues, passes d'attaque, interception, essaims comparés au TS) | ✅ |
-| S5 à S7 (Orionum, IA, parité et performance) | à faire |
+| Grande bataille : 1 200 coques et 8 000 drones à 9 ms par pas (grilles spatiales, JobScheduler, rendu instancié) | ✅ |
+| S5 Orionum | reporté |
+| S6 et S7 (IA, analyse, runner, parité globale) | à faire |
 
 ## Prérequis
 
@@ -41,7 +43,8 @@ Le visualiseur fait tourner la sim en direct et la dessine avec le rendu de Brut
 - **Batailles scriptées**, sans IA (S6), hangars pleins :
   - le Raid en engagement général ;
   - le Champ de puits, avec la Coalition en tir courbe sur la Tanière ;
-  - les tenailles sur le Mastodonte.
+  - les tenailles sur le Mastodonte ;
+  - la **Grande bataille** : l'Escarmouche répétée de 1 à 100 fois par camp, jusqu'à 1 201 coques et environ 8 000 drones (curseur « Échelle », ou `--scenario 3 --scale 100`).
 - **Contrôles** :
   - Espace : pause.
   - `.` : un pas de sim.
