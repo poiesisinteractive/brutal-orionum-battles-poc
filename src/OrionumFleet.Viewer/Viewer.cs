@@ -22,15 +22,29 @@ struct Effect
     public float3 Color;
 }
 
+/// <summary>Ce que suit la caméra.</summary>
+enum Follow
+{
+    None,
+    Melee,
+    Ship,
+}
+
 /// <summary>
-/// Visualiseur de débug de la sim : la bataille tourne en direct (pas fixe de 0,05 s, accéléré ou figé), rendue
-/// en HDR avec le bloom de Brutal Arena. Formes simples : pavés orientés pour les coques, sphères noires pour
-/// les cœurs des puits, traits lumineux pour les tirs. Ce n'est pas la direction artistique du jeu.
+/// Visualiseur de débug de la sim : la bataille tourne en direct (pas fixe de 0,05 s, de ×1/8 à ×64), rendue
+/// en HDR avec le bloom de Brutal Arena, de la passe d'un chasseur de 30 m au système entier (des milliers de km).
+/// Formes simples : pavés orientés pour les coques, astres procéduraux, traits lumineux pour les tirs, icônes
+/// tactiques de loin. Ce n'est pas la direction artistique du jeu.
 /// </summary>
 sealed class Viewer : IDisposable
 {
     const float SplashSeconds = 2f;
-    const int MaxStepsPerFrame = 400;
+    /// <summary>Temps de calcul de la sim accordé à une image (ms) : au-delà, la vitesse effective baisse.</summary>
+    const double StepBudgetMs = 30;
+    const float MinDistance = 30;
+    const float MaxDistance = 3e7f;
+    /// <summary>En dessous de cette taille apparente (pixels), un vaisseau devient une icône tactique.</summary>
+    const float IconBelowPixels = 3;
 
     // Couleurs des solides (sRGB) et des traits (HDR linéaire).
     static readonly float3 CoalitionHull = new(0.55f, 0.68f, 0.9f);
@@ -46,51 +60,67 @@ sealed class Viewer : IDisposable
     readonly Renderer _renderer;
 
     World _world = null!;
-    int _scenario;
+    int _scenario = Scenarios.SystemBattle;
     int _seed = 1;
-    int _scale = 30;
-    double _frameMs;
+    int _perSide = 500;
     bool _paused;
     float _speed = 1;
     bool _stepOnce;
     double _accumulator;
     double _stepMs;
+    double _frameMs;
+    double _effectiveSpeed;
     double _startTime;
 
     // Caméra orbitale autour d'un point visé.
     float3 _target;
     float _yaw = 0.6f;
-    float _pitch = 0.75f;
-    float _distance = 4200;
-    bool _follow = true;
+    float _pitch = 0.45f;
+    float _distance = 60_000;
+    Follow _follow;
+
+    // Sélection.
+    int _selectedId;
+    bool _dragging;
+    float2 _pressAt;
+    float2? _pendingClick;
+    bool _pendingDouble;
 
     bool _showUi = true;
     bool _showLabels = true;
+    bool _showIcons = true;
     bool _showReach = true;
     bool _showGrid = true;
 
     readonly List<Effect> _effects = new(512);
     readonly List<string> _feed = [];
+    float2[] _screen = [];
+    bool[] _onScreen = [];
 
     // Mode capture (--capture) : avance rapide jusqu'à --at secondes de sim, une image PNG, puis on quitte.
     readonly string? _capturePath;
     readonly double _captureAt;
+    readonly string? _captureSelect;
     int _captureFrames;
 
-    /// <summary>Options : --scenario n, --seed n, --capture fichier.png, --at secondes, --yaw/--pitch/--distance.</summary>
+    /// <summary>
+    /// Options : --scenario n, --seed n, --per-side n, --capture fichier.png, --at secondes, --yaw/--pitch/--distance,
+    /// --select nom (capture : sélectionne et suit ce vaisseau).
+    /// </summary>
     public Viewer(string[] args)
     {
         string? Arg(string name) => Array.IndexOf(args, name) is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
         float FloatArg(string name, float fallback) =>
             float.TryParse(Arg(name), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
-        _scenario = Math.Clamp((int)FloatArg("--scenario", 0), 0, Scenarios.Names.Length - 1);
+        _scenario = Math.Clamp((int)FloatArg("--scenario", _scenario), 0, Scenarios.Names.Length - 1);
         _seed = (int)FloatArg("--seed", 1);
-        _scale = Math.Clamp((int)FloatArg("--scale", _scale), 1, 200);
+        _perSide = Math.Clamp((int)FloatArg("--per-side", _perSide), 6, 2000);
         _capturePath = Arg("--capture");
         _captureAt = FloatArg("--at", 60);
-        _yaw = FloatArg("--yaw", _yaw);
-        _pitch = FloatArg("--pitch", _pitch);
-        _distance = FloatArg("--distance", _distance);
+        _captureSelect = Arg("--select");
+        var yaw = FloatArg("--yaw", float.NaN);
+        var pitch = FloatArg("--pitch", float.NaN);
+        var distance = FloatArg("--distance", float.NaN);
 
         Glfw.WindowHint(GlfwWindowHint.ContextVersionMajor, 4);
         Glfw.WindowHint(GlfwWindowHint.ContextVersionMinor, 1);
@@ -116,15 +146,38 @@ sealed class Viewer : IDisposable
         _renderer.Post.BloomStrength = 0.9f;
 
         Restart();
+        if (!float.IsNaN(yaw))
+            _yaw = yaw;
+        if (!float.IsNaN(pitch))
+            _pitch = pitch;
+        if (!float.IsNaN(distance))
+            _distance = distance;
     }
+
+    bool SystemScale => _world.Scenario.SpawnPoints.Length > 0;
 
     void Restart()
     {
-        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _scale);
+        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _perSide);
         _effects.Clear();
         _feed.Clear();
         _accumulator = 0;
-        _target = Centroid() ?? float3.Zero;
+        _selectedId = 0;
+        if (SystemScale)
+        {
+            // Vue de départ : la flotte de la Coalition, de haut, l'ennemi dans le champ.
+            _target = _world.Home(Side.Coalition);
+            var toEnemy = _world.Home(Side.Clans) - _target;
+            _yaw = MathF.Atan2(-toEnemy.X, -toEnemy.Z);
+            _pitch = 0.35f;
+            _distance = 25_000;
+            _follow = Follow.None;
+        }
+        else
+        {
+            _target = Centroid() ?? float3.Zero;
+            (_yaw, _pitch, _distance, _follow) = (0.6f, 0.75f, 4200, Follow.Melee);
+        }
     }
 
     public void Run()
@@ -141,18 +194,7 @@ sealed class Viewer : IDisposable
             var capturing = _capturePath is not null;
             var splash = !capturing && now - _startTime < SplashSeconds;
             if (capturing)
-            {
-                // Avance à pleine vitesse jusqu'à l'instant voulu ; les effets des dernières secondes restent visibles.
-                while (_world.Time < _captureAt && _world.Result is null)
-                {
-                    _world.Step();
-                    foreach (var e in _world.DrainEvents())
-                        OnEvent(e);
-                }
-                _effects.RemoveAll(fx => _world.Time - fx.Start > fx.Life);
-                if (_captureFrames == 0)
-                    _target = Centroid() ?? _target;
-            }
+                CaptureAdvance();
             else if (!splash)
                 Advance(frameTime);
 
@@ -162,10 +204,14 @@ sealed class Viewer : IDisposable
             ImString.SharedStorage.Reset();
             if (!capturing)
                 UpdateCamera((float)frameTime);
+            else
+                FollowTarget(1);
 
             var renderStart = Stopwatch.GetTimestamp();
             var drawn = RenderScene();
             _frameMs = Stopwatch.GetElapsedTime(renderStart).TotalMilliseconds;
+            if (drawn)
+                Pick();
             BuildUi(splash);
             ImGui.Render();
             if (drawn)
@@ -187,29 +233,64 @@ sealed class Viewer : IDisposable
     void Advance(double frameTime)
     {
         var steps = 0;
+        var clock = Stopwatch.StartNew();
         if (_stepOnce)
         {
+            StepOnce();
             steps = 1;
             _stepOnce = false;
         }
         else if (!_paused && _world.Result is null)
         {
             _accumulator += frameTime * _speed;
-            steps = (int)Math.Min(MaxStepsPerFrame, Math.Floor(_accumulator / World.DtExact));
-            _accumulator = Math.Min(_accumulator - steps * World.DtExact, World.DtExact);
+            // Autant de pas que le budget de l'image le permet ; le retard au-delà est abandonné (la vitesse
+            // effective baisse plutôt que de geler l'affichage).
+            while (_accumulator >= World.DtExact && _world.Result is null && clock.Elapsed.TotalMilliseconds < StepBudgetMs)
+            {
+                StepOnce();
+                _accumulator -= World.DtExact;
+                steps++;
+            }
+            _accumulator = Math.Min(_accumulator, World.DtExact * 2);
         }
-        if (steps == 0)
-            return;
-
-        var clock = Stopwatch.StartNew();
-        for (var i = 0; i < steps && _world.Result is null; i++)
-        {
-            _world.Step();
-            foreach (var e in _world.DrainEvents())
-                OnEvent(e);
-        }
-        _stepMs = clock.Elapsed.TotalMilliseconds / steps;
+        if (steps > 0)
+            _stepMs = clock.Elapsed.TotalMilliseconds / steps;
+        var advanced = steps * World.DtExact;
+        _effectiveSpeed = frameTime > 0 ? _effectiveSpeed * 0.9 + 0.1 * advanced / frameTime : _effectiveSpeed;
         _effects.RemoveAll(fx => _world.Time - fx.Start > fx.Life);
+    }
+
+    void StepOnce()
+    {
+        _world.Step();
+        foreach (var e in _world.DrainEvents())
+            OnEvent(e);
+    }
+
+    void CaptureAdvance()
+    {
+        // Avance à pleine vitesse jusqu'à l'instant voulu ; les effets des dernières secondes restent visibles.
+        while (_world.Time < _captureAt && _world.Result is null)
+            StepOnce();
+        _effects.RemoveAll(fx => _world.Time - fx.Start > fx.Life);
+        if (_captureFrames > 0)
+            return;
+        if (_captureSelect is not null)
+        {
+            foreach (ref readonly var s in _world.Ships.AsSpan())
+                if (s.IsActive && s.Name == _captureSelect)
+                {
+                    _selectedId = s.Id;
+                    FocusSelected();
+                    _target = s.Pos;
+                    break;
+                }
+        }
+        else if (!SystemScale)
+        {
+            // Dans le système, le barycentre des deux flottes tombe dans le vide entre elles : on garde la vue de départ.
+            _target = Centroid() ?? _target;
+        }
     }
 
     void OnEvent(in SimEvent e)
@@ -244,7 +325,10 @@ sealed class Viewer : IDisposable
                 AddEffect(e.Type, 0.18f, e.At, default, 6 + MathF.Min(30, e.Value * 0.15f), new float3(0.3f, 0.75f, 1f));
                 break;
             case SimEventType.Swallowed:
-                AddEffect(e.Type, 0.6f, e.At, default, 6 + e.Value * 2, new float3(0.7f, 0.25f, 1f));
+                // Un tir qui s'écrase sur un astre, ou avalé par un cœur.
+                var planet = WellIndex(e.OtherId) is var wi and >= 0 && _world.Wells[wi].Planet;
+                AddEffect(e.Type, 0.6f, e.At, default, planet ? 4 + e.Value : 6 + e.Value * 2,
+                    planet ? new float3(1f, 0.55f, 0.3f) : new float3(0.7f, 0.25f, 1f));
                 break;
             case SimEventType.ShipCrippled:
                 Feed($"{_world.Time:F1} s  {ShipLabel(e.ShipId)} hors de combat (par {ShipLabel(e.OtherId)})");
@@ -253,6 +337,14 @@ sealed class Viewer : IDisposable
                 Feed($"{_world.Time:F1} s  {ShipLabel(e.ShipId)} détruit");
                 break;
         }
+    }
+
+    int WellIndex(int id)
+    {
+        for (var i = 0; i < _world.Wells.Count; i++)
+            if (_world.Wells[i].Id == id)
+                return i;
+        return -1;
     }
 
     void AddEffect(SimEventType type, float life, float3 at, float3 to, float size, float3 color) =>
@@ -284,34 +376,101 @@ sealed class Viewer : IDisposable
         return n > 0 ? sum / n : null;
     }
 
+    int SelectedIndex => _selectedId != 0 ? _world.ShipIndex(_selectedId) : -1;
+
     // --- Caméra et entrées -----------------------------------------------------------------
 
     void UpdateCamera(float dt)
     {
         var io = ImGui.GetIO();
+        var mouse = ImGui.GetMousePos();
         if (!io.WantCaptureMouse)
         {
+            // Clic simple (sans glisser) : sélection ; double-clic : sélection et suivi ; glisser : tourner.
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left, false))
+                (_pressAt, _dragging) = (mouse, false);
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left) && Vec.Len(new float3(mouse.X - _pressAt.X, mouse.Y - _pressAt.Y, 0)) > 4)
+                _dragging = true;
+            if (ImGui.IsMouseReleased(ImGuiMouseButton.Left) && !_dragging)
+                _pendingClick = mouse;
+            if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+                (_pendingClick, _pendingDouble) = (mouse, true);
+
             var delta = io.MouseDelta;
-            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left) && _dragging)
             {
                 _yaw -= delta.X * 0.005f;
-                _pitch = Math.Clamp(_pitch + delta.Y * 0.005f, -1.45f, 1.45f);
+                _pitch = Math.Clamp(_pitch + delta.Y * 0.005f, -1.5f, 1.5f);
             }
             if (ImGui.IsMouseDown(ImGuiMouseButton.Right) || ImGui.IsMouseDown(ImGuiMouseButton.Middle))
             {
-                _follow = false;
-                var (right, forward) = (new float3(MathF.Cos(_yaw), 0, -MathF.Sin(_yaw)), new float3(MathF.Sin(_yaw), 0, MathF.Cos(_yaw)));
+                _follow = Follow.None;
+                var right = new float3(MathF.Cos(_yaw), 0, -MathF.Sin(_yaw));
+                var forward = new float3(MathF.Sin(_yaw), 0, MathF.Cos(_yaw));
                 var k = _distance * 0.0015f;
                 _target += right * (-delta.X * k) + forward * (-delta.Y * k);
             }
             if (io.MouseWheel != 0)
-                _distance = Math.Clamp(_distance * MathF.Pow(0.88f, io.MouseWheel), 150, 20000);
+                _distance = Math.Clamp(_distance * MathF.Pow(0.85f, io.MouseWheel), MinDistance, MaxDistance);
         }
-        if (_follow && Centroid() is { } c)
-            _target = float3.Lerp(_target, c, 1 - MathF.Exp(-dt * 1.5f));
+        FollowTarget(1 - MathF.Exp(-dt * 4));
+    }
+
+    void FollowTarget(float blend)
+    {
+        switch (_follow)
+        {
+            case Follow.Ship when SelectedIndex is var i and >= 0 && _world.Ships[i].Alive:
+                _target = float3.Lerp(_target, _world.Ships[i].Pos, blend);
+                break;
+            case Follow.Ship:
+                _follow = Follow.None;
+                break;
+            case Follow.Melee when Centroid() is { } c:
+                _target = float3.Lerp(_target, c, blend);
+                break;
+        }
     }
 
     float3 Eye => _target + new float3(MathF.Sin(_yaw) * MathF.Cos(_pitch), MathF.Sin(_pitch), MathF.Cos(_yaw) * MathF.Cos(_pitch)) * _distance;
+
+    /// <summary>Le clic en attente : le vaisseau le plus proche du curseur à l'écran (icône ou modèle).</summary>
+    void Pick()
+    {
+        if (_pendingClick is not { } at)
+            return;
+        var best = -1;
+        var bestD = 18f * 18f;
+        for (var i = 0; i < _world.Ships.Count && i < _screen.Length; i++)
+        {
+            if (!_onScreen[i])
+                continue;
+            var d = _screen[i] - at;
+            var d2 = d.X * d.X + d.Y * d.Y;
+            if (d2 < bestD)
+                (best, bestD) = (i, d2);
+        }
+        if (best >= 0)
+        {
+            _selectedId = _world.Ships[best].Id;
+            if (_pendingDouble)
+                FocusSelected();
+        }
+        else if (!_pendingDouble)
+        {
+            _selectedId = 0;
+        }
+        (_pendingClick, _pendingDouble) = (null, false);
+    }
+
+    /// <summary>Zoom sur le vaisseau sélectionné, puis la caméra le suit.</summary>
+    void FocusSelected()
+    {
+        if (SelectedIndex is not (var i and >= 0))
+            return;
+        _follow = Follow.Ship;
+        _distance = Math.Clamp(_world.Ships[i].Class.Radius * 9, 150, 3000);
+    }
 
     void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods)
     {
@@ -320,7 +479,7 @@ sealed class Viewer : IDisposable
         switch (key)
         {
             case GlfwKey.Escape:
-                window.ShouldClose = true;
+                (_selectedId, _follow) = (0, _follow == Follow.Ship ? Follow.None : _follow);
                 break;
             case GlfwKey.Space:
                 _paused = !_paused;
@@ -332,20 +491,41 @@ sealed class Viewer : IDisposable
                 Restart();
                 break;
             case GlfwKey.F:
-                _follow = true;
+                if (SelectedIndex >= 0)
+                    FocusSelected();
+                else
+                    _follow = Follow.Melee;
+                break;
+            case GlfwKey.Home:
+                FrameBattle();
+                break;
+            case GlfwKey.G:
+                _showIcons = !_showIcons;
                 break;
             case GlfwKey.F1:
                 _showUi = !_showUi;
                 break;
             case GlfwKey.KpAdd:
             case GlfwKey.Equal:
-                _speed = MathF.Min(32, _speed * 2);
+                _speed = MathF.Min(64, _speed * 2);
                 break;
             case GlfwKey.KpSubtract:
             case GlfwKey.Minus:
                 _speed = MathF.Max(0.125f, _speed / 2);
                 break;
         }
+    }
+
+    /// <summary>Cadre toute la bataille : centre des coques, recul selon leur étendue.</summary>
+    void FrameBattle()
+    {
+        if (Centroid() is not { } c)
+            return;
+        var spread = 0f;
+        foreach (ref readonly var s in _world.Ships.AsSpan())
+            if (s.IsActive)
+                spread = MathF.Max(spread, Vec.Dist(s.Pos, c));
+        (_target, _distance, _follow) = (c, Math.Clamp(spread * 2.2f, 2000, MaxDistance), Follow.None);
     }
 
     // --- Rendu -----------------------------------------------------------------------------
@@ -357,37 +537,52 @@ sealed class Viewer : IDisposable
         if (width == 0 || height == 0)
             return false;
 
-        var w = _world;
-        FillLights();
-        _renderer.BeginFrame(new int2(width, height), Eye, _target);
+        var eye = Eye;
+        FillLights(eye);
+        _renderer.BeginFrame(new int2(width, height), eye, _target);
 
-        if (_showGrid)
+        DrawStar();
+        if (_showGrid && !SystemScale)
             DrawGrid();
         DrawWells();
         DrawShips();
         DrawDrones();
         DrawProjectiles();
         DrawEffects();
+        DrawSelection();
 
         _renderer.EndFrame();
+        ProjectShips();
         return true;
     }
 
-    void FillLights()
+    void FillLights(float3 eye)
     {
         var lights = _renderer.Lights;
         lights.Clear();
         foreach (ref readonly var g in _world.Wells.AsSpan())
-            lights.Add(g.Pos, g.Core * 4, new float3(0.6f, 0.2f, 1f), 1.2f);
-        // Les explosions les plus récentes d'abord.
+            if (!g.Planet)
+                lights.Add(g.Pos - eye, g.Core * 4, new float3(0.6f, 0.2f, 1f), 1.2f);
+        // Les explosions proches les plus récentes d'abord.
         for (var i = _effects.Count - 1; i >= 0 && lights.Count < LightBuffer.MaxLights; i--)
         {
             var fx = _effects[i];
             if (fx.Type is not (SimEventType.Explosion or SimEventType.Blast or SimEventType.CoreBreach))
                 continue;
+            if (Vec.Dist(fx.At, eye) > 20_000)
+                continue;
             var t = (float)((_world.Time - fx.Start) / fx.Life);
-            lights.Add(fx.At, fx.Size * 8 + 150, new float3(1f, 0.6f, 0.3f), 6 * (1 - t));
+            lights.Add(fx.At - eye, fx.Size * 8 + 150, new float3(1f, 0.6f, 0.3f), 6 * (1 - t));
         }
+    }
+
+    /// <summary>Wolf 359, naine rouge, loin dans la direction de la lumière (toujours à la même distance de l'œil).</summary>
+    void DrawStar()
+    {
+        if (!SystemScale)
+            return;
+        var dir = _renderer.SunDirection;
+        _renderer.DrawSphere(_renderer.Origin + dir * 4e8f, 1.1e7f, new float3(1f, 0.38f, 0.18f), 40);
     }
 
     void DrawGrid()
@@ -401,10 +596,25 @@ sealed class Viewer : IDisposable
         }
     }
 
+    /// <summary>Couleur et surface d'un astre, d'après son nom.</summary>
+    static (float3 Color, Surface Surface) PlanetLook(string name) => name switch
+    {
+        "Wolf 359 b" => (new float3(0.86f, 0.62f, 0.42f), Surface.GasGiant),
+        "Mirande" => (new float3(0.45f, 0.55f, 0.68f), Surface.Rock),
+        "Ixion" => (new float3(0.62f, 0.6f, 0.58f), Surface.Rock),
+        _ => (new float3(0.55f, 0.5f, 0.46f), Surface.Rock),
+    };
+
     void DrawWells()
     {
         foreach (ref readonly var g in _world.Wells.AsSpan())
         {
+            if (g.Planet)
+            {
+                var (color, surface) = PlanetLook(_world.WellName(g));
+                _renderer.DrawGlobe(g.Pos, g.Core, color, surface);
+                continue;
+            }
             var core = Terrain.WellCore(g);
             if (core > 0)
             {
@@ -425,6 +635,9 @@ sealed class Viewer : IDisposable
                 continue;
             var cls = s.Class;
             var r = cls.Radius;
+            // Trop petit pour être vu : l'icône tactique prend le relais (le modèle coûterait sans rien montrer).
+            if (_showIcons && _renderer.PixelRadius(s.Pos, r) < IconBelowPixels * 0.5f)
+                continue;
             var fwd = Vec.LenSq(s.Fwd) > 1e-6f ? Vec.Normalize(s.Fwd) : float3.UnitZ;
             var up = MathF.Abs(fwd.Y) > 0.98f ? float3.UnitX : float3.UnitY;
             var world = float4x4.CreateWorld(s.Pos, fwd, up);
@@ -445,11 +658,12 @@ sealed class Viewer : IDisposable
                 // Pavé allongé dans l'axe du nez, avec une passerelle sur le dos.
                 _renderer.DrawBox(float4x4.CreateScale(r * 0.38f, r * 0.2f, r) * world, hullColor);
                 _renderer.DrawBox(float4x4.CreateScale(r * 0.16f, r * 0.14f, r * 0.3f) * float4x4.CreateTranslation(0, r * 0.3f, r * 0.25f) * world, hullColor * 0.85f);
-                // Tuyère : brille avec la poussée.
+                // Tuyère : brille avec la poussée (en croisière, à plein).
                 var engine = s.Pos - fwd * (r * 1.05f);
-                _renderer.DrawSphere(engine, r * 0.17f, glow, dying ? 0.3f : 1.5f + s.Thrust * 6);
-                // Nez : repère de cap.
+                _renderer.DrawSphere(engine, r * 0.17f, glow, dying ? 0.3f : 1.5f + s.Thrust * 6 + (s.Cruise ? 6 : 0));
                 _renderer.Line(s.Pos + fwd * r, s.Pos + fwd * (r * 1.6f), glow * 2);
+                if (s.Cruise)
+                    _renderer.Line(engine, engine - fwd * (r * 12), glow * 1.2f, float3.Zero); // traînée de croisière
             }
 
             if (dying)
@@ -462,13 +676,15 @@ sealed class Viewer : IDisposable
 
     /// <summary>
     /// Drones : petite flèche émissive dans l'axe du vol, avec une traînée. Les intercepteurs sont plus clairs ;
-    /// un drone orphelin (porteur perdu) s'éteint peu à peu.
+    /// un drone orphelin (porteur perdu) s'éteint peu à peu. Invisibles de loin (moins d'un pixel) : sautés.
     /// </summary>
     void DrawDrones()
     {
+        var eye = _renderer.Origin;
+        var maxRange = _renderer.PixelsPerRadian * 5 / 0.6f; // un drone de 5 m fait encore 0,6 pixel
         foreach (ref readonly var d in _world.Drones.AsSpan())
         {
-            if (!d.Alive)
+            if (!d.Alive || Vec.DistSq(d.Pos, eye) > maxRange * maxRange)
                 continue;
             var glow = d.Side == Side.Coalition ? CoalitionGlow : ClansGlow;
             var interceptor = d.Role == DroneRole.Interceptor;
@@ -483,9 +699,11 @@ sealed class Viewer : IDisposable
 
     void DrawProjectiles()
     {
+        var eye = _renderer.Origin;
+        var maxRange = MathF.Max(60_000, _distance * 3);
         foreach (ref readonly var p in _world.Projectiles.AsSpan())
         {
-            if (!p.Alive)
+            if (!p.Alive || Vec.DistSq(p.Pos, eye) > maxRange * maxRange)
                 continue;
             var glow = p.Side == Side.Coalition ? CoalitionGlow : ClansGlow;
             switch (p.Weapon)
@@ -515,8 +733,12 @@ sealed class Viewer : IDisposable
 
     void DrawEffects()
     {
+        var eye = _renderer.Origin;
+        var maxRange = MathF.Max(80_000, _distance * 4);
         foreach (var fx in _effects)
         {
+            if (Vec.DistSq(fx.At, eye) > maxRange * maxRange)
+                continue;
             var t = Math.Clamp((float)((_world.Time - fx.Start) / fx.Life), 0, 1);
             var fade = 1 - t;
             switch (fx.Type)
@@ -540,6 +762,73 @@ sealed class Viewer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Le vaisseau sélectionné : lignes vers ses cibles (rouges) et depuis ceux qui le visent (orangées), cercle de
+    /// sa plus longue portée, ses drones reliés à lui, et son groupe de flotte cerclé.
+    /// </summary>
+    void DrawSelection()
+    {
+        if (SelectedIndex is not (var si and >= 0))
+            return;
+        ref readonly var s = ref _world.Ships[si];
+        var cls = s.Class;
+        var white = new float3(2.5f, 2.5f, 2.5f);
+        _renderer.Circle(s.Pos, cls.Radius * 2.2f, white, 48);
+        if (!s.Alive)
+            return;
+        _renderer.Circle(s.Pos, Movement.MaxWeaponRange(s), new float3(0.6f, 0.6f, 0.2f), 128);
+
+        var targets = new HashSet<int>();
+        for (var w = 0; w < s.WeaponCount; w++)
+            if (s.Weapons[w].TargetId != 0)
+                targets.Add(s.Weapons[w].TargetId);
+        if (s.Orders.Count > 0 && s.Orders[0].TargetId != 0)
+            targets.Add(s.Orders[0].TargetId);
+        foreach (var id in targets)
+            if (_world.ShipIndex(id) is var ti and >= 0 && _world.Ships[ti].Alive)
+                _renderer.Line(s.Pos, _world.Ships[ti].Pos, new float3(3f, 0.4f, 0.3f), new float3(0.8f, 0.1f, 0.1f));
+
+        foreach (ref readonly var o in _world.Ships.AsSpan())
+        {
+            if (!o.IsActive || o.Side == s.Side)
+                continue;
+            for (var w = 0; w < o.WeaponCount; w++)
+                if (o.Weapons[w].TargetId == s.Id)
+                {
+                    _renderer.Line(o.Pos, s.Pos, new float3(1.2f, 0.5f, 0.1f), new float3(0.2f, 0.08f, 0.02f));
+                    break;
+                }
+        }
+
+        foreach (ref readonly var d in _world.Drones.AsSpan())
+            if (d.Alive && d.CarrierId == s.Id)
+                _renderer.Line(s.Pos, d.Pos, new float3(0.1f, 0.3f, 0.15f), new float3(0.4f, 1.6f, 0.6f));
+
+        if (FleetSystem.GroupOf(_world.Fleet(s.Side), s.Id) is { } g)
+            foreach (var id in g.Members)
+                if (id != s.Id && _world.ShipIndex(id) is var gi and >= 0 && _world.Ships[gi].IsActive)
+                    _renderer.Circle(_world.Ships[gi].Pos, _world.Ships[gi].Class.Radius * 1.8f, new float3(1.6f, 1.4f, 0.3f), 24);
+    }
+
+    /// <summary>Positions écran des coques (icônes, étiquettes, sélection).</summary>
+    void ProjectShips()
+    {
+        var count = _world.Ships.Count;
+        if (_screen.Length < count)
+        {
+            _screen = new float2[count];
+            _onScreen = new bool[count];
+        }
+        for (var i = 0; i < count; i++)
+        {
+            ref readonly var s = ref _world.Ships[i];
+            var p = s.Alive && !s.Withdrawn ? _renderer.Project(s.Pos, 1.05f) : null;
+            _onScreen[i] = p.HasValue;
+            if (p is { } v)
+                _screen[i] = v;
+        }
+    }
+
     // --- UI --------------------------------------------------------------------------------
 
     static ImColor8 Col(float r, float g, float b, float a = 1)
@@ -547,6 +836,8 @@ sealed class Viewer : IDisposable
         var c = new float4(r, g, b, a);
         return ImGui.GetColorU32(in c);
     }
+
+    static string Km(float meters) => meters >= 10_000 ? $"{meters / 1000:F0} km" : meters >= 1000 ? $"{meters / 1000:F1} km" : $"{meters:F0} m";
 
     void BuildUi(bool splash)
     {
@@ -571,13 +862,17 @@ sealed class Viewer : IDisposable
             return;
         }
 
-        if (_showLabels)
-            DrawLabels();
+        DrawOverlay();
         if (!_showUi)
             return;
+        BuildBattleWindow(io);
+        BuildShipWindow(display);
+    }
 
+    void BuildBattleWindow(ImGuiIOPtr io)
+    {
         ImGui.SetNextWindowPos(new float2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new float2(600, 0), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new float2(560, 0), ImGuiCond.FirstUseEver);
         if (ImGui.Begin("Bataille (F1)"u8))
         {
             for (var i = 0; i < Scenarios.Names.Length; i++)
@@ -586,12 +881,10 @@ sealed class Viewer : IDisposable
                     _scenario = i;
                     Restart();
                 }
-            if (_scenario == Scenarios.GrandBattle)
+            if (_scenario == Scenarios.SystemBattle)
             {
                 ImGui.SetNextItemWidth(260);
-                ImGui.SliderInt("Échelle (x Escarmouche par camp)"u8, ref _scale, 1, 100, "%d"u8, ImGuiSliderFlags.None);
-                ImGui.SameLine();
-                ImGui.TextDisabled($"{12 * _scale + 1} coques");
+                ImGui.SliderInt("Coques par camp"u8, ref _perSide, 6, 2000, "%d"u8, ImGuiSliderFlags.Logarithmic);
             }
             ImGui.SetNextItemWidth(120);
             ImGui.InputInt("Graine"u8, ref _seed, 1, 10, ImGuiInputTextFlags.None);
@@ -604,17 +897,18 @@ sealed class Viewer : IDisposable
             ImGui.SameLine();
             if (ImGui.Button("Pas (.)"u8))
                 _stepOnce = true;
-            ImGui.SliderFloat("Vitesse (+/-)"u8, ref _speed, 0.125f, 32f, "x%.2f"u8, ImGuiSliderFlags.Logarithmic);
+            ImGui.SliderFloat("Vitesse (+/-)"u8, ref _speed, 0.125f, 64f, "x%.2f"u8, ImGuiSliderFlags.Logarithmic);
 
             var w = _world;
-            ImGui.Text($"Temps {w.Time:F1} s   pas {w.Tick}   sim {_stepMs:F2} ms/pas   rendu {_frameMs:F1} ms   {io.Framerate:F0} FPS");
-            ImGui.TextDisabled($"{_renderer.LastInstances} instances, {_renderer.LastLines} segments, {_effects.Count} effets");
+            var lagging = !_paused && w.Result is null && _effectiveSpeed < _speed * 0.9;
+            ImGui.Text($"Temps {TimeSpan.FromSeconds(w.Time):hh\\:mm\\:ss}   vitesse effective x{_effectiveSpeed:F1}{(lagging ? " (la machine ne suit plus)" : "")}");
+            ImGui.TextDisabled($"sim {_stepMs:F2} ms/pas   rendu {_frameMs:F1} ms   {io.Framerate:F0} FPS   {_renderer.LastInstances} instances, {_renderer.LastLines} segments");
             if (w.Result is { } result)
-                ImGui.TextColored(new float4(1f, 0.85f, 0.3f, 1f), $"Fin : victoire {(result.Winner == Side.Coalition ? "de la Coalition" : "des Clans")} ({result.Reason}) à {result.Time:F1} s");
+                ImGui.TextColored(new float4(1f, 0.85f, 0.3f, 1f), $"Fin : victoire {(result.Winner == Side.Coalition ? "de la Coalition" : "des Clans")} ({result.Reason}) à {TimeSpan.FromSeconds(result.Time):hh\\:mm\\:ss}");
 
             foreach (var side in (ReadOnlySpan<Side>)[Side.Coalition, Side.Clans])
             {
-                int active = 0, total = 0;
+                int active = 0, total = 0, cruising = 0;
                 float hull = 0, hullMax = 0;
                 foreach (ref readonly var s in w.Ships.AsSpan())
                 {
@@ -623,62 +917,47 @@ sealed class Viewer : IDisposable
                     total++;
                     if (s.IsActive)
                         active++;
-                    hull += s.Alive ? s.Hull : 0;
+                    if (s.IsActive && s.Cruise)
+                        cruising++;
+                    hull += s.Alive ? MathF.Max(0, s.Hull) : 0;
                     hullMax += s.HullMax;
                 }
                 var color = side == Side.Coalition ? new float4(0.55f, 0.75f, 1f, 1f) : new float4(1f, 0.6f, 0.35f, 1f);
-                ImGui.TextColored(color, $"{(side == Side.Coalition ? "Coalition" : "Clans")} : {active}/{total} coques, coque {100 * hull / MathF.Max(1, hullMax):F0} %%");
+                string line = $"{(side == Side.Coalition ? "Coalition" : "Clans")} : {active}/{total} coques, coque {100 * hull / MathF.Max(1, hullMax):F0} %%{(cruising > 0 ? $", {cruising} en croisière" : "")}";
+                ImGui.TextColored(color, line);
             }
-            ImGui.Text($"Projectiles en vol {w.Projectiles.Count}   avalés {w.Stats.Swallowed}   tirs courbes {w.Stats.ArcShots.Coalition + w.Stats.ArcShots.Clans}   bombes {w.Stats.BombsDetonated} (interceptées {w.Stats.BombsIntercepted})");
             var dronesAlive = 0;
             foreach (ref readonly var d in w.Drones.AsSpan())
                 if (d.Alive)
                     dronesAlive++;
-            ImGui.Text($"Drones en vol {dronesAlive}   lancés {w.Stats.DronesLaunched}   abattus par la DCA {w.Stats.DronesLostToPd}");
-            ImGui.Text($"Frappes de drones {w.Stats.DroneShipHits}   duels {w.Stats.DroneDroneShots}   sous-systèmes détruits {w.Stats.DroneSubsystemKills}");
+            ImGui.Text($"Drones en vol {dronesAlive}   lancés {w.Stats.DronesLaunched}   abattus par la DCA {w.Stats.DronesLostToPd}   projectiles {w.Projectiles.Count}");
 
-            if (w.Ships.Count > 40 && ImGui.CollapsingHeader("Classes"u8, ImGuiTreeNodeFlags.DefaultOpen))
+            if (w.Ships.Count > 40 && ImGui.CollapsingHeader("Classes"u8))
                 DrawClassSummary();
-            else if (w.Ships.Count <= 40 && ImGui.CollapsingHeader("Coques"u8, ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                foreach (ref readonly var s in w.Ships.AsSpan())
-                {
-                    if (!s.Alive)
-                        continue;
-                    float shields = 0;
-                    for (var f = 0; f < 6; f++)
-                        shields += s.Faces[f];
-                    var shieldMax = 6 * MathF.Max(1, s.Class.ShieldFace);
-                    var order = s.Orders.Count > 0 ? s.Orders[0].Type.ToString() : "-";
-                    var color = s.Dying is not null ? new float4(0.5f, 0.5f, 0.5f, 1f)
-                        : s.Side == Side.Coalition ? new float4(0.6f, 0.78f, 1f, 1f) : new float4(1f, 0.65f, 0.4f, 1f);
-                    // ImGui.Text* lit le texte comme un format printf : les « % » sont doublés.
-                    string line = $"{s.Name,-16} {s.Class.LabelFr,-18} coque {100 * s.Hull / MathF.Max(1, s.HullMax),3:F0} %%  boucliers {100 * shields / shieldMax,3:F0} %%  {order}";
-                    ImGui.TextColored(color, line);
-                }
-            }
-
-            if (ImGui.CollapsingHeader("Journal"u8, ImGuiTreeNodeFlags.DefaultOpen))
+            if (ImGui.CollapsingHeader("Journal"u8))
                 foreach (var line in _feed)
                     ImGui.Text(line);
-
             if (ImGui.CollapsingHeader("Affichage"u8))
             {
+                ImGui.Checkbox("Icônes tactiques (G)"u8, ref _showIcons);
+                ImGui.SameLine();
                 ImGui.Checkbox("Étiquettes"u8, ref _showLabels);
                 ImGui.SameLine();
-                ImGui.Checkbox("Portée des puits"u8, ref _showReach);
-                ImGui.SameLine();
                 ImGui.Checkbox("Grille"u8, ref _showGrid);
-                ImGui.Checkbox("Suivre la mêlée (F)"u8, ref _follow);
+                ImGui.SameLine();
+                ImGui.Checkbox("Portée des puits"u8, ref _showReach);
+                var melee = _follow == Follow.Melee;
+                if (ImGui.Checkbox("Suivre la mêlée"u8, ref melee))
+                    _follow = melee ? Follow.Melee : Follow.None;
                 var post = _renderer.Post;
                 ImGui.Checkbox("Bloom"u8, ref post.BloomEnabled);
                 ImGui.SliderFloat("Exposition"u8, ref post.Exposure, 0.1f, 4f);
                 ImGui.SliderFloat("Bloom force"u8, ref post.BloomStrength, 0f, 3f);
-                ImGui.SliderFloat("Bloom seuil"u8, ref post.BloomThreshold, 0f, 4f);
-                ImGui.SliderFloat("Soleil"u8, ref _renderer.SunIntensity, 0f, 3f);
+                ImGui.SliderFloat("Étoile"u8, ref _renderer.SunIntensity, 0f, 4f);
                 ImGui.SliderFloat("Ambiance"u8, ref _renderer.AmbientIntensity, 0f, 5f);
             }
-            ImGui.TextColored(new float4(0.6f, 0.6f, 0.6f, 1f), "Clic gauche : tourner. Clic droit : déplacer. Molette : zoom."u8);
+            ImGui.TextColored(new float4(0.6f, 0.6f, 0.6f, 1f), "Clic : sélectionner. Double-clic ou F : suivre. Glisser : tourner."u8);
+            ImGui.TextColored(new float4(0.6f, 0.6f, 0.6f, 1f), "Clic droit : déplacer. Molette : zoom. Origine : toute la bataille. Échap : lâcher."u8);
         }
         ImGui.End();
     }
@@ -710,38 +989,240 @@ sealed class Viewer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Nom, coque (vert) et boucliers (bleu) au-dessus des coques proches de la caméra (toutes en petite
-    /// bataille), et nom des puits.
-    /// </summary>
-    void DrawLabels()
+    /// <summary>Fiche du vaisseau sélectionné : état, boucliers, sous-systèmes, armes, ordre, groupe, bilan.</summary>
+    void BuildShipWindow(float2 display)
     {
-        var eye = Eye;
-        var labelRange = _world.Ships.Count <= 40 ? float.PositiveInfinity : 2200f;
-        // Calque de fond : par-dessus la scène, mais sous les fenêtres ImGui.
+        if (SelectedIndex is not (var si and >= 0))
+            return;
+        ImGui.SetNextWindowPos(new float2(display.X - 10, 10), ImGuiCond.FirstUseEver, new float2(1, 0));
+        ImGui.SetNextWindowSize(new float2(470, 0), ImGuiCond.FirstUseEver);
+        ref readonly var s = ref _world.Ships[si];
+        var cls = s.Class;
+        var sideColor = s.Side == Side.Coalition ? new float4(0.6f, 0.78f, 1f, 1f) : new float4(1f, 0.65f, 0.4f, 1f);
+        if (ImGui.Begin("Vaisseau"u8))
+        {
+            ImGui.TextColored(sideColor, $"{s.Name} - {cls.LabelFr}");
+            var state = !s.Alive ? "détruit" : s.Withdrawn ? "parti" : s.Dying is not null ? "à l'agonie" : s.Cruise ? "en croisière" : "au combat";
+            ImGui.Text($"{(s.Side == Side.Coalition ? "Coalition" : "Clans")}, {cls.Role}, {state}");
+            ImGui.Text($"Vitesse {Vec.Len(s.Vel):F0} m/s   position ({s.Pos.X / 1000:F1}, {s.Pos.Y / 1000:F1}, {s.Pos.Z / 1000:F1}) km");
+            if (_world.ShipIndex(s.Orders.Count > 0 ? s.Orders[0].TargetId : 0) is var oi and >= 0)
+                ImGui.Text($"Distance à la cible {Km(Vec.Dist(s.Pos, _world.Ships[oi].Pos))}");
+            if (ImGui.Button("Suivre (F)"u8))
+                FocusSelected();
+            ImGui.SameLine();
+            if (ImGui.Button("Lâcher (Échap)"u8))
+                _selectedId = 0;
+
+            ImGui.Separator();
+            // ImGui.Text avec une chaîne interpolée n'est pas formaté (pas de %% à doubler), TextColored(string) l'est.
+            ImGui.Text($"Coque {MathF.Max(0, s.Hull):F0} / {s.HullMax:F0}  ({100 * MathF.Max(0, s.Hull) / s.HullMax:F0} %)");
+            var faceMax = Combat.FaceMax(s, Face.Front);
+            ImGui.Text($"Boucliers  avant {s.Faces[(int)Face.Front]:F0}  arrière {s.Faces[(int)Face.Back]:F0}  bâbord {s.Faces[(int)Face.Port]:F0}  tribord {s.Faces[(int)Face.Starboard]:F0}");
+            ImGui.Text($"           dorsal {s.Faces[(int)Face.Dorsal]:F0}  ventral {s.Faces[(int)Face.Ventral]:F0}");
+            ImGui.TextDisabled($"  (max {faceMax:F0} par face{(s.ShieldLock > 0 ? $", verrouillés {s.ShieldLock:F1} s" : "")})");
+            string subs = "Sous-systèmes ";
+            foreach (var sub in Enum.GetValues<Subsystem>())
+            {
+                var ss = s.Subsystems[(int)sub];
+                subs += $" {sub} {ss.Hp:F0}/{ss.Max:F0}{(ss.Offline ? " HS" : "")}";
+            }
+            ImGui.Text(subs);
+
+            ImGui.Separator();
+            for (var w = 0; w < s.WeaponCount; w++)
+            {
+                ref readonly var ws = ref s.Weapons[w];
+                var def = cls.Weapons[ws.DefIndex];
+                var target = ws.TargetId != 0 && _world.ShipIndex(ws.TargetId) is var t and >= 0 ? _world.Ships[t].Name : "-";
+                string line = $"{def.Id,-11} {def.Kind,-8} portée {Km(def.Range),-7} recharge {Math.Max(0, ws.Cooldown),4:F1} s  cible {target}";
+                ImGui.Text(line);
+            }
+            if (s.HasHangar)
+            {
+                var flying = 0;
+                foreach (ref readonly var d in _world.Drones.AsSpan())
+                    if (d.Alive && d.CarrierId == s.Id)
+                        flying++;
+                ImGui.Text($"Hangar : {s.Hangar.Stock} en soute, {flying} en vol, mode {s.Hangar.Mode}");
+            }
+            if (s.EmpAmmo > 0)
+                ImGui.Text($"Bombe à énergie : {s.EmpAmmo}");
+
+            ImGui.Separator();
+            if (s.Orders.Count > 0)
+            {
+                var o = s.Orders[0];
+                var target = o.TargetId != 0 ? ShipLabel(o.TargetId) : "-";
+                ImGui.Text($"Ordre {o.Type}  cible {target}{(o.Distance is { } dist ? $"  à {Km(dist)}" : "")}{(o.Subsystem is { } sub ? $"  visée {sub}" : "")}");
+            }
+            else
+            {
+                ImGui.Text("Aucun ordre"u8);
+            }
+            if (FleetSystem.GroupOf(_world.Fleet(s.Side), s.Id) is { } g)
+            {
+                int alive = 0;
+                float hull = 0, hullMax = 0;
+                foreach (var id in g.Members)
+                    if (_world.ShipIndex(id) is var gi and >= 0)
+                    {
+                        if (_world.Ships[gi].IsActive)
+                            alive++;
+                        hull += MathF.Max(0, _world.Ships[gi].Hull);
+                        hullMax += _world.Ships[gi].HullMax;
+                    }
+                var gt = g.TargetId != 0 ? ShipLabel(g.TargetId) : g.AutoTarget ? "automatique" : "-";
+                ImGui.Text($"Groupe « {g.Name} » : {alive} en jeu, coque {100 * hull / MathF.Max(1, hullMax):F0} %");
+                ImGui.Text($"  formation {g.Formation}, cible {gt}");
+            }
+            else
+            {
+                ImGui.Text("Détachée de son groupe"u8);
+            }
+            ImGui.Text($"Bilan : {s.Stats.DamageDealt:F0} dégâts infligés, {s.Stats.Kills} victimes");
+        }
+        ImGui.End();
+    }
+
+    /// <summary>
+    /// Par-dessus la scène, sous les fenêtres : icônes tactiques des vaisseaux trop petits pour être vus, étiquettes
+    /// des vaisseaux proches, noms des astres et des puits.
+    /// </summary>
+    void DrawOverlay()
+    {
         var draw = ImGui.GetBackgroundDrawList(ImGui.GetMainViewport());
         foreach (ref readonly var g in _world.Wells.AsSpan())
-            if (_renderer.Project(g.Pos + new float3(0, g.Core * 1.5f, 0)) is { } p)
-                draw.AddText(p, Col(0.8f, 0.6f, 1f), _world.WellName(g));
-
-        foreach (ref readonly var s in _world.Ships.AsSpan())
         {
-            if (!s.Alive || s.Withdrawn || Vec.Dist(s.Pos, eye) > labelRange
-                || _renderer.Project(s.Pos + new float3(0, s.Class.Radius * 1.3f, 0)) is not { } p)
+            // Un astre qui remplit l'écran (la géante sous la bataille) n'a pas besoin d'étiquette.
+            if (g.Planet && _renderer.PixelRadius(g.Pos, g.Core) > 400)
                 continue;
+            var at = g.Pos + new float3(0, g.Core * (g.Planet ? 1.02f : 1.5f), 0);
+            if (_renderer.Project(at) is { } p)
+                draw.AddText(p, g.Planet ? Col(1f, 0.85f, 0.7f, 0.8f) : Col(0.8f, 0.6f, 1f), _world.WellName(g));
+        }
+
+        var selected = SelectedIndex;
+        var group = selected >= 0 ? FleetSystem.GroupOf(_world.Fleet(_world.Ships[selected].Side), _world.Ships[selected].Id) : null;
+        var grouped = _showIcons ? DrawSquadronMarkers(draw, group) : null;
+        var labelled = 0;
+        for (var i = 0; i < _world.Ships.Count && i < _screen.Length; i++)
+        {
+            if (!_onScreen[i] || (grouped is not null && grouped[i] && i != selected))
+                continue;
+            ref readonly var s = ref _world.Ships[i];
+            var p = _screen[i];
+            var px = _renderer.PixelRadius(s.Pos, s.Class.Radius);
+            var inGroup = group is not null && group.Members.Contains(s.Id);
+            if (_showIcons && px < IconBelowPixels)
+                DrawIcon(draw, p, s, i == selected, inGroup);
+            else if (i == selected)
+                draw.AddCircle(p, MathF.Max(10, px * 1.6f), Col(1, 1, 1), 32, 1.5f);
+
+            var label = i == selected || (_showLabels && px >= 12 && labelled < 30);
+            if (!label)
+                continue;
+            labelled++;
             var text = s.Side == Side.Coalition ? Col(0.65f, 0.8f, 1f, 0.9f) : Col(1f, 0.7f, 0.45f, 0.9f);
-            draw.AddText(p + new float2(-30, -30), text, s.Name);
+            var top = p + new float2(-30, -MathF.Max(14, px) - 26);
+            draw.AddText(top, text, s.Name);
             var hull = Math.Clamp(s.Hull / MathF.Max(1, s.HullMax), 0, 1);
             float shields = 0;
             for (var f = 0; f < 6; f++)
                 shields += s.Faces[f];
             var shield = Math.Clamp(shields / (6 * MathF.Max(1, s.Class.ShieldFace)), 0, 1);
-            var a = p + new float2(-30, -12);
+            var a = top + new float2(0, 16);
             draw.AddLine(a, a + new float2(60, 0), Col(0.15f, 0.15f, 0.15f, 0.8f), 4);
             draw.AddLine(a, a + new float2(60 * hull, 0), s.Dying is not null ? Col(0.5f, 0.5f, 0.5f) : Col(0.3f, 0.9f, 0.4f), 4);
             var b = a + new float2(0, 5);
             draw.AddLine(b, b + new float2(60 * shield, 0), Col(0.35f, 0.7f, 1f), 2);
         }
+    }
+
+    bool[] _grouped = [];
+
+    /// <summary>
+    /// Très loin, les icônes d'une escadre se confondent : quand toutes celles qui sont à l'écran tiennent dans
+    /// quelques pixels, un seul marqueur d'escadre (cadre et effectif) les remplace. Rend, par coque, si elle est
+    /// représentée par un marqueur.
+    /// </summary>
+    bool[] DrawSquadronMarkers(ImDrawListPtr draw, Group? selectedGroup)
+    {
+        if (_grouped.Length < _world.Ships.Count)
+            _grouped = new bool[_world.Ships.Count];
+        Array.Clear(_grouped);
+        foreach (var side in (ReadOnlySpan<Side>)[Side.Coalition, Side.Clans])
+            foreach (var g in _world.Fleet(side).Groups)
+            {
+                var sum = float2.Zero;
+                var n = 0;
+                foreach (var id in g.Members)
+                    if (_world.ShipIndex(id) is var i and >= 0 && i < _onScreen.Length && _onScreen[i] && _world.Ships[i].IsActive)
+                    {
+                        sum += _screen[i];
+                        n++;
+                    }
+                if (n < 2)
+                    continue;
+                var center = sum / n;
+                var spread = 0f;
+                foreach (var id in g.Members)
+                    if (_world.ShipIndex(id) is var i and >= 0 && i < _onScreen.Length && _onScreen[i] && _world.Ships[i].IsActive)
+                    {
+                        var d = _screen[i] - center;
+                        spread = MathF.Max(spread, MathF.Sqrt(d.X * d.X + d.Y * d.Y));
+                    }
+                if (spread > 10)
+                    continue;
+                foreach (var id in g.Members)
+                    if (_world.ShipIndex(id) is var i and >= 0 && i < _grouped.Length)
+                        _grouped[i] = true;
+                var color = side == Side.Coalition ? Col(0.45f, 0.7f, 1f, 0.95f) : Col(1f, 0.55f, 0.25f, 0.95f);
+                var half = new float2(9, 6);
+                Poly(draw, color, center - half, center + new float2(half.X, -half.Y), center + half, center + new float2(-half.X, half.Y));
+                draw.AddLine(center + new float2(-half.X, 0), center + new float2(half.X, 0), color, 1);
+                if (ReferenceEquals(g, selectedGroup))
+                    draw.AddCircle(center, 14, Col(1f, 0.9f, 0.3f, 0.9f), 20, 1.5f);
+                draw.AddText(center + new float2(11, -7), color, $"{n}");
+            }
+        return _grouped;
+    }
+
+    /// <summary>Icône tactique : losange (capital), carré (porteur, station), triangle (raider), cercle (escorte, ligne).</summary>
+    static void DrawIcon(ImDrawListPtr draw, float2 p, in Ship s, bool selected, bool inGroup)
+    {
+        var dying = s.Dying is not null;
+        var color = dying ? Col(0.5f, 0.5f, 0.5f, 0.7f)
+            : s.Side == Side.Coalition ? Col(0.45f, 0.7f, 1f, 0.95f) : Col(1f, 0.55f, 0.25f, 0.95f);
+        var role = s.Class.Role;
+        var r = role is Role.Capital or Role.Carrier or Role.Depot ? 5f : 3.5f;
+        switch (role)
+        {
+            case Role.Capital:
+                Poly(draw, color, p + new float2(0, -r), p + new float2(r, 0), p + new float2(0, r), p + new float2(-r, 0));
+                break;
+            case Role.Carrier:
+            case Role.Depot:
+                Poly(draw, color, p + new float2(-r, -r), p + new float2(r, -r), p + new float2(r, r), p + new float2(-r, r));
+                break;
+            case Role.Brawler:
+                Poly(draw, color, p + new float2(0, -r), p + new float2(r, r * 0.8f), p + new float2(-r, r * 0.8f));
+                break;
+            default:
+                draw.AddCircle(p, r, color, 8, 1.5f);
+                break;
+        }
+        if (s.Cruise)
+            draw.AddLine(p + new float2(-r - 3, r + 3), p + new float2(r + 3, r + 3), color, 1);
+        if (selected)
+            draw.AddCircle(p, r + 6, Col(1, 1, 1), 24, 1.5f);
+        else if (inGroup)
+            draw.AddCircle(p, r + 4, Col(1f, 0.9f, 0.3f, 0.9f), 16, 1);
+    }
+
+    static void Poly(ImDrawListPtr draw, ImColor8 color, params ReadOnlySpan<float2> points)
+    {
+        for (var i = 0; i < points.Length; i++)
+            draw.AddLine(points[i], points[(i + 1) % points.Length], color, 1.5f);
     }
 
     public void Dispose()

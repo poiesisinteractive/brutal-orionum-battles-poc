@@ -17,6 +17,7 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | V0 Visualiseur de débug (OpenGL HDR + bloom, ImGui) | ✅ |
 | S4 Drones et hangars (vagues, passes d'attaque, interception, essaims comparés au TS) | ✅ |
 | Grande bataille : 1 200 coques et 8 000 drones à 9 ms par pas (grilles spatiales, JobScheduler, rendu instancié) | ✅ |
+| Bataille à l'échelle du système de Wolf 359 : jusqu'à 2 000 coques par camp, croisière, astres, icônes tactiques, fiche de vaisseau | ✅ |
 | S5 Orionum | reporté |
 | S6 et S7 (IA, analyse, runner, parité globale) | à faire |
 
@@ -44,17 +45,19 @@ Le visualiseur fait tourner la sim en direct et la dessine avec le rendu de Brut
   - le Raid en engagement général ;
   - le Champ de puits, avec la Coalition en tir courbe sur la Tanière ;
   - les tenailles sur le Mastodonte ;
-  - la **Grande bataille** : l'Escarmouche répétée de 1 à 100 fois par camp, jusqu'à 1 201 coques et environ 8 000 drones (curseur « Échelle », ou `--scenario 3 --scale 100`).
+  - le **Système de Wolf 359** (par défaut) : de 6 à 2 000 coques par camp (curseur, ou `--per-side 500`), parties de deux points tirés de la graine à des centaines de km. Les escadres traversent le système en croisière (3 km/s) puis engagent. Une géante gazeuse fait le sol, deux lunes coupent le champ ; les astres arrêtent les tirs. La dernière flotte debout l'emporte.
 - **Contrôles** :
   - Espace : pause.
   - `.` : un pas de sim.
-  - `+` et `-` : vitesse de ×1/8 à ×32.
+  - `+` et `-` : vitesse de ×1/8 à ×64 (la vitesse effective s'affiche quand la machine ne suit plus).
   - R : relancer.
-  - F : suivre la mêlée.
+  - Clic sur un vaisseau (modèle ou icône) : sa fiche (coque, 6 faces, sous-systèmes, armes, ordre, groupe, bilan), ses lignes de ciblage, sa portée, ses drones et son escadre.
+  - Double-clic ou F : zoomer sur le vaisseau et le suivre. Sans sélection, F suit la mêlée.
+  - Échap : lâcher la sélection.
+  - Origine : cadrer toute la bataille.
+  - G : icônes tactiques (de loin, chaque vaisseau devient une icône de classe ; plus loin encore, une escadre devient un marqueur avec son effectif).
   - F1 : afficher ou masquer le panneau.
-  - Clic gauche : tourner.
-  - Clic droit : déplacer.
-  - Molette : zoomer.
+  - Glisser : tourner. Clic droit : déplacer. Molette : zoomer (de 30 m à 30 000 km).
 - **Capture sans écran**, utile pour vérifier un rendu : la commande ci-dessous avance la sim à pleine vitesse jusqu'à 90 s, enregistre une image puis quitte.
 
   ```sh

@@ -12,29 +12,37 @@ static class Scenarios
         "Raid sur Wolf 359 : engagement général",
         "Champ de puits : tir courbe sur la Tanière",
         "Raid : tenailles sur le Mastodonte",
-        "Grande bataille : l'Escarmouche multipliée",
+        "Système de Wolf 359 : grande bataille",
     ];
 
-    public const int GrandBattle = 3;
+    public const int SystemBattle = 3;
 
-    /// <param name="scale">Grande bataille : chaque camp aligne <paramref name="scale"/> fois sa flotte d'Escarmouche.</param>
-    public static World Create(int index, uint seed, int scale = 1)
+    /// <param name="perSide">Bataille système : coques par camp, dans les proportions de l'Escarmouche.</param>
+    public static World Create(int index, uint seed, int perSide = 500)
     {
-        var options = new WorldOptions { Scenario = index == 1 ? ScenarioId.WellField : ScenarioId.Wolf359Raid };
-        if (index == GrandBattle)
+        var options = new WorldOptions
+        {
+            Scenario = index switch
+            {
+                1 => ScenarioId.WellField,
+                SystemBattle => ScenarioId.Wolf359System,
+                _ => ScenarioId.Wolf359Raid,
+            },
+        };
+        if (index == SystemBattle)
             options = options with
             {
-                Coalition = Enumerable.Repeat(GameData.SkirmishCoalition, scale).SelectMany(x => x).ToArray(),
-                Clans = Enumerable.Repeat(GameData.SkirmishClans, scale).SelectMany(x => x).ToArray(),
-                TimeLimit = 3600,
+                Coalition = GameData.Fleet(Side.Coalition, perSide),
+                Clans = GameData.Fleet(Side.Clans, perSide),
             };
         var w = new World(seed, options);
 
         switch (index)
         {
             case 0:
-            case GrandBattle:
-                // Mêmes ordres que CombatParityTests « raid » : tous les groupes en ciblage automatique.
+            case SystemBattle:
+                // Tous les groupes en ciblage automatique ; dans le système, chaque escadre fait route en
+                // croisière vers l'ennemi le plus proche puis engage.
                 foreach (var side in (ReadOnlySpan<Side>)[Side.Coalition, Side.Clans])
                     foreach (var g in w.Fleet(side).Groups)
                         FleetSystem.CommandGroup(w.Fleet(side), g, x => x.AutoTarget = true);

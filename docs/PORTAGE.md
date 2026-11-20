@@ -86,6 +86,18 @@ Banc : l'Escarmouche répétée N fois par camp, ciblage automatique, 120 s simu
 - **Visualiseur** : solides instanciés (deux appels de dessin pour plus de 11 000 objets à ×100), étiquettes près de la caméra, résumé par classe, explosions plafonnées.
 - **À suivre** : les armes en parallèle (2,6 ms à ×100), les pics au démarrage (JIT et croissance des tableaux), et l'IA (S6).
 
+### Bataille à l'échelle du système
+
+Décisions du 2026-11-20 (voir DECISIONS.md). 500 contre 500 : environ 6 ms par pas, contact après environ 130 s de croisière.
+
+- **Scénario `Wolf359System`** (1 u = 1 m). Les astres sont des puits sans attraction (`Planet`) : la géante (5 000 km de rayon, son sommet à 200 km sous le plan de bataille), une planète rocheuse au loin et deux lunes au milieu du champ. Ils réutilisent la mécanique du Terrain : les coques contournent les cœurs, les tirs s'y écrasent, et la conduite de tir ne vise pas une cible masquée.
+- **Départs** tirés de la graine (RNG à part, le flux principal reste celui du TS) parmi des points distants d'au moins 300 km. Le déploiement s'oriente vers l'ennemi ; pour le raid, c'est exactement le repère du TS.
+- **Escadres** : un groupe de plus de 24 coques est découpé en escadres mixtes (une tranche de chaque rôle).
+- **Croisière** : à chaque tick de flotte, une escadre file à 3 km/s quand l'ennemi le plus proche de son ancre est au-delà de 16 km (sortie sous 12 km). Le vol est cinématique, à la même vitesse pour toute l'escadre (la formation se garde), et contourne les astres. Les drones suivent leur porteur. Les marges des index spatiaux passent à 160 m (150 m par pas en croisière).
+- **Annihilation** : la dernière flotte debout l'emporte ; au temps limite, la plus grosse coque restante.
+- **Visualiseur** : rendu relatif à la caméra et profondeur logarithmique (de 0,5 m à 10⁹ m), astres procéduraux (bandes, roche, liseré d'atmosphère), Wolf 359 en naine rouge. Icônes tactiques sous 3 pixels, marqueurs d'escadre quand une escadre tient dans 10 pixels. Sélection au clic, fiche de vaisseau, caméra qui suit, accélération jusqu'à ×64 avec un budget de 30 ms de sim par image.
+- **Sans IA** (S6), la fin d'une grande bataille traîne : les escadres se dispersent et les survivants s'éloignent.
+
 ### Notes de V0
 - **La sim ne sait rien du visualiseur.** Il lit les tables du monde et vide les événements (`DrainEvents`) après chaque pas pour en tirer des effets datés en temps de sim. La pause fige donc aussi les explosions.
 - **Rendu de Brutal Arena**, mis à l'échelle (plan lointain à 40 000 u, brouillard et lumières ponctuelles réglés pour des distances de plusieurs milliers d'unités) et complété d'un lot de lignes émissives en additif pour les tirs, les rayons, les anneaux et la grille.
