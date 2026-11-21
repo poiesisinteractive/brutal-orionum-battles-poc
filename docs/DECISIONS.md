@@ -46,3 +46,20 @@ Après S4, le portage change de cap pour profiter de BRUTAL.
 | Sélection | **Un clic sur un vaisseau** ouvre sa fiche complète (coque, 6 faces, sous-systèmes, armes, ordre, cible, bilan). On peut aussi suivre le vaisseau à la caméra, voir ses lignes de ciblage, ses portées et ses drones, et mettre en surbrillance son groupe de flotte avec l'état du groupe. |
 | Vue lointaine | **Icônes tactiques** : en dézoomant, chaque vaisseau devient une icône de classe colorée par camp. |
 | IA | **Pas encore.** En attendant S6, chaque groupe fait route en croisière vers le groupe ennemi le plus proche, puis engage en ciblage automatique. |
+
+## Révision du 2026-11-21 : la bataille des capitaux
+
+La bataille du système est un fouillis : trop de petits vaisseaux, des essaims de drones, aucune hiérarchie visuelle, aucune lecture de qui tire sur qui. On la recentre sur des vaisseaux capitaux gigantesques.
+
+| Sujet | Décision |
+| --- | --- |
+| Classes | **Cinq classes par camp, de quatre tailles nettes** : frégate (~150 m), croiseur (~600 m), cuirassé (~1,5 km), vaisseau amiral (~3 km), et un porteur (~1 km) avec ses escadrilles. Chaque taille a un rôle et une silhouette. |
+| Effectifs | **Peu mais énormes** : de 10 à 30 capitaux par camp, escortés de quelques dizaines de vaisseaux plus petits. |
+| Armement des capitaux | **Bordées de tourelles** (des dizaines, qui pivotent et tirent de flanc), **canon axial géant** (salve dévastatrice, longue recharge, il faut pointer tout le vaisseau), **lances à rayon** (rayons continus de plusieurs secondes), **missiles en salves** (interceptables par la défense ponctuelle). |
+| Portée | **10 à 30 km** entre capitaux : on voit les deux lignes et les tirs qui traversent l'espace entre elles. Les petits vaisseaux vont au contact. |
+| Dégâts | **Localisés** : tourelles, moteurs et générateurs de bouclier détruits un par un, sections en feu, coque qui se fissure. Un capital se dégrade sous nos yeux avant de mourir. |
+| Drones | **Escadrilles lisibles** : quelques escadrilles de 6 à 12 appareils par porteur, qui volent et frappent en groupe. |
+| Apparence | **Modèles procéduraux de grande qualité**, générés en code par classe : proues, superstructures, tourelles visibles qui pivotent, tuyères, feux de position. |
+| Esthétique | **Deux styles** : Coalition aux coques effilées, claires, aux lignes nettes et aux feux bleus ; Clans aux masses brutes, asymétriques, blindées, aux feux orange. Reconnaissables même de loin. |
+| Lecture | **Lignes de bataille** (les capitaux face à face, les petits sur les flancs), **moments forts** (tir axial, destruction d'un capital, bouclier qui tombe : effets marqués, ralenti optionnel, journal), **tableau de bord des capitaux** (une colonne par camp, coque, boucliers, tourelles restantes, cliquable). |
+| Base | **Une nouvelle couche capitale sur le socle** : vol newtonien, boucliers par face, croisière, astres et performance sont gardés. La parité avec le TS reste valable pour l'Escarmouche. |
