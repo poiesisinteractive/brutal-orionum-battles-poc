@@ -5,8 +5,15 @@ using OrionumFleet.Sim;
 
 namespace OrionumFleet.Viewer.Rendering;
 
+/// <summary>
+/// Sommet : position et normale (repère du maillage, en mètres pour les vaisseaux), couleur sRGB du matériau
+/// (w = pas des panneaux de blindage en mètres, 0 = surface lisse) et émission propre (hublots, feux, tuyères).
+/// </summary>
 [StructLayout(LayoutKind.Sequential)]
-record struct Vertex(float3 Position, float3 Normal);
+record struct Vertex(float3 Position, float3 Normal, float4 Color, float Emissive)
+{
+    public Vertex(float3 position, float3 normal) : this(position, normal, new float4(1, 1, 1, 0), 0) { }
+}
 
 /// <summary>Sommet d'une ligne lumineuse : position (relative à la caméra) et couleur HDR.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -91,6 +98,8 @@ sealed class Renderer : IDisposable
     /// <summary>Pixels par unité à une unité de distance (taille apparente : rayon × ceci / distance).</summary>
     public float PixelsPerRadian { get; private set; }
 
+    readonly List<Mesh> _meshes = [];
+
     public Mesh Cube { get; }
     public Mesh Sphere { get; }
     /// <summary>Sphère fine pour les astres (leur bord se voit de près).</summary>
@@ -104,9 +113,9 @@ sealed class Renderer : IDisposable
         OpenGl.UniformBlockBinding(_program, OpenGl.GetUniformBlockIndex(_program, "Lights"u8), LightBuffer.BindingPoint);
         _lineProgram = GlUtil.CreateProgram(LineVertexShader, LineFragmentShader);
 
-        Cube = Upload(BuildCube());
-        Sphere = Upload(BuildSphere(16, 24));
-        Globe = Upload(BuildSphere(128, 192));
+        Globe = CreateMesh(BuildSphere(128, 192));
+        Cube = CreateMesh(BuildCube());
+        Sphere = CreateMesh(BuildSphere(16, 24));
 
         _lineArray = OpenGl.GenVertexArray().Bind();
         _lineBuffer = OpenGl.GenBuffer();
@@ -167,7 +176,7 @@ sealed class Renderer : IDisposable
     {
         _program.Use();
         LastInstances = 0;
-        foreach (var mesh in (ReadOnlySpan<Mesh>)[Globe, Cube, Sphere])
+        foreach (var mesh in _meshes)
         {
             if (mesh.InstanceCount == 0)
                 continue;
@@ -255,16 +264,32 @@ sealed class Renderer : IDisposable
         return m;
     }
 
+    /// <summary>Envoie un maillage au GPU ; ses instances se dessinent ensuite à chaque frame (voir <see cref="Draw"/>).</summary>
+    public Mesh CreateMesh(Vertex[] vertices)
+    {
+        var mesh = Upload(vertices);
+        _meshes.Add(mesh);
+        return mesh;
+    }
+
+    /// <summary>Une instance d'un maillage, matrice du modèle en coordonnées du monde.</summary>
+    public void Draw(Mesh mesh, in float4x4 model, float3 color, float emissive = 0) => mesh.Add(ToCamera(model), color, emissive);
+
     static unsafe Mesh Upload(Vertex[] vertices)
     {
         var vertexArray = OpenGl.GenVertexArray().Bind();
         var vertexBuffer = OpenGl.GenBuffer();
         vertexBuffer.Bind(GlBindTarget.ArrayBuffer);
         OpenGl.BufferData(GlBindTarget.ArrayBuffer, vertices, GlBufferUsage.StaticDraw);
-        OpenGl.VertexAttribute(new GlAttribute(0, 3, OpenGl.GL_FLOAT, GlScaling.Float, 6 * sizeof(float), 0));
-        OpenGl.VertexAttribute(new GlAttribute(1, 3, OpenGl.GL_FLOAT, GlScaling.Float, 6 * sizeof(float), 3 * sizeof(float)));
+        var vertexStride = sizeof(Vertex);
+        OpenGl.VertexAttribute(new GlAttribute(0, 3, OpenGl.GL_FLOAT, GlScaling.Float, vertexStride, 0));
+        OpenGl.VertexAttribute(new GlAttribute(1, 3, OpenGl.GL_FLOAT, GlScaling.Float, vertexStride, 3 * sizeof(float)));
+        OpenGl.VertexAttribute(new GlAttribute(7, 4, OpenGl.GL_FLOAT, GlScaling.Float, vertexStride, 6 * sizeof(float)));
+        OpenGl.VertexAttribute(new GlAttribute(8, 1, OpenGl.GL_FLOAT, GlScaling.Float, vertexStride, 10 * sizeof(float)));
         OpenGl.EnableVertexAttribArray(0);
         OpenGl.EnableVertexAttribArray(1);
+        OpenGl.EnableVertexAttribArray(7);
+        OpenGl.EnableVertexAttribArray(8);
 
         // Tampon d'instances : la matrice occupe les attributs 2 à 5 (une colonne GLSL chacun), la couleur le 6.
         var instanceBuffer = OpenGl.GenBuffer();
@@ -321,8 +346,13 @@ sealed class Renderer : IDisposable
 
     public void Dispose()
     {
-        OpenGl.DeleteVertexArrays([Cube.VertexArray, Sphere.VertexArray, Globe.VertexArray, _lineArray]);
-        OpenGl.DeleteBuffers([Cube.VertexBuffer, Sphere.VertexBuffer, Globe.VertexBuffer, Cube.InstanceBuffer, Sphere.InstanceBuffer, Globe.InstanceBuffer, _lineBuffer]);
+        foreach (var mesh in _meshes)
+        {
+            OpenGl.DeleteVertexArrays([mesh.VertexArray]);
+            OpenGl.DeleteBuffers([mesh.VertexBuffer, mesh.InstanceBuffer]);
+        }
+        OpenGl.DeleteVertexArrays([_lineArray]);
+        OpenGl.DeleteBuffers([_lineBuffer]);
         _program.Dispose();
         _lineProgram.Dispose();
         Lights.Dispose();
@@ -339,9 +369,14 @@ sealed class Renderer : IDisposable
             layout (location = 1) in vec3 aNormal;
             layout (location = 2) in mat4 iModel;          // attributs 2 à 5, un par instance (relatif à la caméra)
             layout (location = 6) in vec4 iColorEmissive;  // rgb sRGB, a = émissif (négatif : surface d'astre)
+            layout (location = 7) in vec4 aColor;          // couleur du matériau, w = pas des panneaux (m)
+            layout (location = 8) in float aEmissive;      // émission propre du sommet (hublots, feux)
             uniform mat4 viewProjection;
             out vec3 normal;
             out vec3 localNormal;
+            out vec3 localPos;
+            out vec4 vColor;
+            out float vEmissive;
             out vec3 viewPos;                              // position relative à la caméra
             out float logZ;
             flat out vec3 color;
@@ -352,6 +387,9 @@ sealed class Renderer : IDisposable
                 viewPos = world.xyz;
                 normal = mat3(iModel) * aNormal;
                 localNormal = aNormal;
+                localPos = aPos;
+                vColor = aColor;
+                vEmissive = aEmissive;
                 color = iColorEmissive.rgb;
                 emissive = iColorEmissive.a;
                 gl_Position = viewProjection * world;
@@ -364,6 +402,9 @@ sealed class Renderer : IDisposable
             #version 410 core
             in vec3 normal;
             in vec3 localNormal;
+            in vec3 localPos;
+            in vec4 vColor;
+            in float vEmissive;
             in vec3 viewPos;
             in float logZ;
             flat in vec3 color;          // sRGB, converti en linéaire ici
@@ -428,8 +469,29 @@ sealed class Renderer : IDisposable
                     return;
                 }
 
+                // Matériau du sommet et panneaux de blindage : joints sombres tous les vColor.w mètres, projetés sur
+                // l'axe dominant de la normale locale, et une teinte qui varie d'une plaque à l'autre.
+                albedo *= pow(vColor.rgb, vec3(2.2));
+                float spec = 0.35;
+                if (vColor.w > 0.0)
+                {
+                    vec3 an = abs(normalize(localNormal));
+                    vec2 uv = an.x > an.y && an.x > an.z ? localPos.yz : an.y > an.z ? localPos.xz : localPos.xy;
+                    vec2 cell = uv / vec2(vColor.w, vColor.w * 2.3);
+                    vec2 g = abs(fract(cell) - 0.5);
+                    vec2 aa = fwidth(cell) * 1.2;
+                    float seam = 1.0 - min(smoothstep(0.5 - aa.x - 0.015, 0.5 - 0.015, g.x) + smoothstep(0.5 - aa.y - 0.015, 0.5 - 0.015, g.y), 1.0);
+                    // Le motif s'efface quand une plaque devient plus petite que quelques pixels (pas de damier de loin).
+                    float detail = clamp(1.0 - max(aa.x, aa.y) * 3.0, 0.0, 1.0);
+                    float tone = mix(1.0, 0.93 + 0.1 * hash(vec3(floor(cell), 7.0)), detail);
+                    albedo *= tone * mix(1.0, mix(0.7, 1.0, seam), detail);
+                    spec = 0.3 + 0.25 * hash(vec3(floor(cell), 3.0)) * detail;
+                }
+
                 vec3 lighting = mix(groundAmbient, skyAmbient, n.y * 0.5 + 0.5);
-                lighting += sunColor * max(dot(n, sunDirection), 0.0);
+                float sunDiffuse = max(dot(n, sunDirection), 0.0);
+                lighting += sunColor * sunDiffuse;
+                vec3 sunSpec = sunColor * pow(max(dot(n, normalize(sunDirection + v)), 0.0), 40.0) * spec * step(0.0, sunDiffuse);
 
                 for (int i = 0; i < lightCount.x; i++)
                 {
@@ -447,7 +509,8 @@ sealed class Renderer : IDisposable
                     lighting += lights[i].colorIntensity.rgb * lights[i].colorIntensity.a * falloff * (diffuse + specular);
                 }
 
-                FragColor = vec4(albedo * lighting + albedo * emissive * emissiveScale, 1.0);
+                vec3 glow = pow(vColor.rgb, vec3(2.2)) * vEmissive * emissiveScale;
+                FragColor = vec4(albedo * lighting + sunSpec + albedo * emissive * emissiveScale + glow, 1.0);
             }
             """u8;
 

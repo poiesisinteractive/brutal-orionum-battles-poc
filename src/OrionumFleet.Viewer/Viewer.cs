@@ -60,6 +60,9 @@ sealed class Viewer : IDisposable
     readonly GlfwBackend _glfwBackend;
     readonly OpenGlBackend _openGlBackend;
     readonly Renderer _renderer;
+    readonly ShipModels _models;
+    /// <summary>Points d'impact récents par coque (repère de la coque) : les incendies d'un capital qui se dégrade.</summary>
+    readonly Dictionary<int, List<float3>> _scars = [];
 
     World _world = null!;
     int _scenario = Scenarios.SystemBattle;
@@ -144,6 +147,7 @@ sealed class Viewer : IDisposable
         _glfwBackend = new GlfwBackend(_window, GlfwBackend.ClientApi.OpenGL);
         _openGlBackend = new OpenGlBackend();
         _renderer = new Renderer();
+        _models = new ShipModels(_renderer);
         _renderer.Post.BloomThreshold = 1.1f;
         _renderer.Post.BloomStrength = 0.9f;
 
@@ -162,6 +166,7 @@ sealed class Viewer : IDisposable
     {
         _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _fleetScale);
         _effects.Clear();
+        _scars.Clear();
         _feed.Clear();
         _accumulator = 0;
         _selectedId = 0;
@@ -322,6 +327,9 @@ sealed class Viewer : IDisposable
                 // Moment fort : la salve axiale d'un vaisseau amiral.
                 AddEffect(SimEventType.Explosion, 1.2f, e.At, default, 260, new float3(1f, 0.9f, 0.7f));
                 Feed($"{_world.Time:F0} s  {ShipLabel(e.OtherId)} tire son canon axial");
+                break;
+            case SimEventType.HullHit when _world.ShipIndex(e.ShipId) is var hi and >= 0 && _models.For(_world.Ships[hi].ClassId) is { } scarred:
+                AddScar(hi, scarred, e.At);
                 break;
             case SimEventType.TurretDestroyed:
                 AddEffect(SimEventType.Explosion, 1.1f, e.At, default, 45, new float3(1f, 0.55f, 0.2f));
@@ -647,6 +655,56 @@ sealed class Viewer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Un impact de coque, ramené sur la coque (la sim le place sur la sphère englobante) et gardé dans le repère du
+    /// vaisseau : il y brûlera quand la coque aura assez souffert. Au plus 24 par coque, les plus anciens s'effacent.
+    /// </summary>
+    void AddScar(int shipIndex, ShipModel model, float3 at)
+    {
+        ref readonly var s = ref _world.Ships[shipIndex];
+        var f = Vec.FrameFromForward(s.Fwd);
+        var d = at - s.Pos;
+        var local = new float3(Vec.Dot(d, -f.Right), Vec.Dot(d, f.Up), Vec.Dot(d, f.Fwd));
+        var r = s.Class.Radius;
+        local = new float3(Math.Clamp(local.X, -model.HalfWidth, model.HalfWidth), Math.Clamp(local.Y, -model.Bottom, model.Top),
+            Math.Clamp(local.Z, -r * 0.9f, r * 0.85f));
+        if (!_scars.TryGetValue(s.Id, out var scars))
+            _scars[s.Id] = scars = [];
+        if (scars.Count >= 24)
+            scars.RemoveAt(0);
+        scars.Add(local);
+    }
+
+    /// <summary>Un capital procédural : coque, tourelles vivantes tournées vers leur cible, incendies sur ses plaies.</summary>
+    void DrawModel(in Ship s, ShipModel model, bool dying)
+    {
+        var tint = dying ? new float3(0.3f, 0.28f, 0.27f) : new float3(1, 1, 1);
+        _renderer.Draw(model.Hull, ShipModels.HullMatrix(s), tint);
+        var cls = s.Class;
+        foreach (var mount in model.Turrets)
+        {
+            ref readonly var ws = ref s.Weapons[mount.Weapon];
+            if (!Batteries.IsAlive(ws, mount.Turret))
+                continue;
+            float3? aim = ws.TargetId != 0 && _world.ShipIndex(ws.TargetId) is var ti and >= 0 ? _world.Ships[ti].Pos : null;
+            var local = cls.Weapons[ws.DefIndex].Hardpoints![mount.Turret];
+            _renderer.Draw(mount.Mesh, ShipModels.TurretMatrix(s, mount, local, aim), tint);
+        }
+
+        var damage = 1 - Math.Clamp(s.Hull / MathF.Max(1, s.HullMax), 0, 1);
+        if ((damage < 0.15f && !dying) || !_scars.TryGetValue(s.Id, out var scars))
+            return;
+        var burning = dying ? scars.Count : (int)(scars.Count * Math.Clamp((damage - 0.15f) / 0.6f, 0, 1)) + 1;
+        var f = Vec.FrameFromForward(s.Fwd);
+        for (var i = scars.Count - 1; i >= 0 && burning > 0; i--, burning--)
+        {
+            var p = scars[i];
+            var world = s.Pos - f.Right * p.X + f.Up * p.Y + f.Fwd * p.Z;
+            var flicker = 0.6f + 0.4f * MathF.Sin((float)_world.Time * (9 + i) + i * 1.7f);
+            _renderer.DrawSphere(world, cls.Radius * (0.012f + 0.02f * damage) * (0.8f + 0.4f * flicker), new float3(1f, 0.42f, 0.12f), 4 + 4 * flicker);
+        }
+    }
+
     void DrawShips()
     {
         foreach (ref readonly var s in _world.Ships.AsSpan())
@@ -658,6 +716,13 @@ sealed class Viewer : IDisposable
             // Trop petit pour être vu : l'icône tactique prend le relais (le modèle coûterait sans rien montrer).
             if (_showIcons && _renderer.PixelRadius(s.Pos, r) < IconBelowPixels * 0.5f)
                 continue;
+            if (_models.For(s.ClassId) is { } model)
+            {
+                DrawModel(s, model, s.Dying is not null);
+                if (s.Cruise)
+                    _renderer.Line(s.Pos - Vec.Normalize(s.Fwd) * r, s.Pos - Vec.Normalize(s.Fwd) * (r * 6), (s.Side == Side.Coalition ? CoalitionGlow : ClansGlow) * 1.2f, float3.Zero);
+                continue;
+            }
             var fwd = Vec.LenSq(s.Fwd) > 1e-6f ? Vec.Normalize(s.Fwd) : float3.UnitZ;
             var up = MathF.Abs(fwd.Y) > 0.98f ? float3.UnitX : float3.UnitY;
             var world = float4x4.CreateWorld(s.Pos, fwd, up);
@@ -900,6 +965,7 @@ sealed class Viewer : IDisposable
             return;
         BuildBattleWindow(io);
         BuildShipWindow(display);
+        BuildCapitalsWindow(display);
     }
 
     void BuildBattleWindow(ImGuiIOPtr io)
@@ -991,6 +1057,61 @@ sealed class Viewer : IDisposable
             }
             ImGui.TextColored(new float4(0.6f, 0.6f, 0.6f, 1f), "Clic : sélectionner. Double-clic ou F : suivre. Glisser : tourner."u8);
             ImGui.TextColored(new float4(0.6f, 0.6f, 0.6f, 1f), "Clic droit : déplacer. Molette : zoom. Origine : toute la bataille. Échap : lâcher."u8);
+        }
+        ImGui.End();
+    }
+
+    /// <summary>
+    /// Tableau de bord des capitaux (croiseurs et plus gros) : par camp, chaque capital avec sa coque, ses boucliers et
+    /// ses tourelles restantes. Un clic le sélectionne ; un second clic sur le sélectionné le suit.
+    /// </summary>
+    void BuildCapitalsWindow(float2 display)
+    {
+        var any = false;
+        foreach (ref readonly var s in _world.Ships.AsSpan())
+            any |= s.Class.Radius >= 300 && s.ClassId != ShipClassId.Depot;
+        if (!any)
+            return;
+        ImGui.SetNextWindowPos(new float2(10, display.Y - 10), ImGuiCond.FirstUseEver, new float2(0, 1));
+        ImGui.SetNextWindowSize(new float2(760, 260), ImGuiCond.FirstUseEver);
+        if (ImGui.Begin("Capitaux"u8))
+        {
+            foreach (var side in (ReadOnlySpan<Side>)[Side.Coalition, Side.Clans])
+            {
+                var color = side == Side.Coalition ? new float4(0.6f, 0.78f, 1f, 1f) : new float4(1f, 0.65f, 0.4f, 1f);
+                ImGui.TextColored(color, side == Side.Coalition ? "Coalition"u8 : "Clans"u8);
+                for (var i = 0; i < _world.Ships.Count; i++)
+                {
+                    ref readonly var s = ref _world.Ships[i];
+                    if (s.Side != side || s.Class.Radius < 300 || s.ClassId == ShipClassId.Depot || s.Withdrawn)
+                        continue;
+                    var alive = 0;
+                    var total = 0;
+                    for (var w = 0; w < s.WeaponCount; w++)
+                        if (s.Class.Weapons[s.Weapons[w].DefIndex].Hardpoints is { } hp)
+                        {
+                            total += hp.Length;
+                            alive += Batteries.AliveCount(s.Weapons[w]);
+                        }
+                    float shields = 0;
+                    for (var f = 0; f < 6; f++)
+                        shields += s.Faces[f];
+                    var shieldMax = 6 * MathF.Max(1, s.Class.ShieldFace);
+                    var state = !s.Alive ? "détruit" : s.Dying is not null ? "à l'agonie" : s.Cruise ? "croisière" : "";
+                    if (ImGui.Button($"{s.Name}##cap{s.Id}"))
+                    {
+                        if (_selectedId == s.Id)
+                            FocusSelected();
+                        _selectedId = s.Id;
+                    }
+                    ImGui.SameLine();
+                    // Chaîne .NET passée à TextColored : un format printf, les % sont doublés.
+                    string line = s.Alive
+                        ? $"{s.Class.LabelFr,-26} coque {100 * MathF.Max(0, s.Hull) / s.HullMax,3:F0} %%  boucliers {100 * shields / shieldMax,3:F0} %%  tourelles {alive,2}/{total,-2} {state}"
+                        : $"{s.Class.LabelFr,-26} {state}";
+                    ImGui.TextColored(s.Alive && s.Dying is null ? color : new float4(0.5f, 0.5f, 0.5f, 1f), line);
+                }
+            }
         }
         ImGui.End();
     }

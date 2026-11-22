@@ -182,6 +182,23 @@ public static class FleetSystem
         return g.AutoTarget ? PickByPriority(w, side, g.Doctrine.Priority, fromIndex) : -1;
     }
 
+    /// <summary>Les <paramref name="count"/> meilleures cibles selon la priorité (ids, de la meilleure à la moins bonne).</summary>
+    static List<int> TopTargets(World w, Side side, FirePriority priority, int fromIndex, int count)
+    {
+        var from = w.Ships[fromIndex].Pos;
+        var enemy = side == Side.Coalition ? Side.Clans : Side.Coalition;
+        var scored = new List<(float Score, int Id)>();
+        foreach (ref readonly var e in w.Ships.AsSpan())
+        {
+            if (e.Side != enemy || !e.IsActive)
+                continue;
+            var score = -Vec.Dist(from, e.Pos) / 1000 + (Matches(priority, e.Class.Role) ? 3 : 0);
+            scored.Add((score, e.Id));
+        }
+        scored.Sort((a, b) => b.Score.CompareTo(a.Score));
+        return scored.Take(count).Select(x => x.Id).ToList();
+    }
+
     public static int PickByPriority(World w, Side side, FirePriority priority, int fromIndex)
     {
         var from = w.Ships[fromIndex].Pos;
@@ -255,12 +272,19 @@ public static class FleetSystem
             : w.Ships[anchor].Fwd;
         var slots = FormationSlots(w, g, anchor, fwdDir);
         var (cruise, cruiseDir) = CruiseOf(w, anchor, target, g.MovePoint);
+        // Grande bataille, ciblage automatique : la ligne répartit son feu sur les meilleures cibles au lieu de
+        // tout jeter sur une seule (un capital se dégrade alors sous le feu au lieu de tomber d'un coup).
+        var spread = w.Scenario.SpawnPoints.Length > 0 && g.AutoTarget && g.TargetId == 0 && target >= 0
+            ? TopTargets(w, f.Side, g.Doctrine.Priority, anchor, 3)
+            : null;
+        var member = 0;
 
         foreach (var id in g.Members)
         {
             var i = w.ShipIndex(id);
             if (i < 0 || !w.Ships[i].IsActive || f.Detached.Contains(id))
                 continue;
+            var focus = spread is { Count: > 0 } ? spread[member++ % spread.Count] : targetId;
             ref var s = ref w.Ships[i];
             if (s.Cruise && !cruise)
             {
@@ -313,7 +337,7 @@ public static class FleetSystem
                 {
                     TargetId = w.Ships[anchor].Id,
                     Slot = slots.TryGetValue(id, out var slot) ? slot : float3.Zero,
-                    FocusId = targetId,
+                    FocusId = focus,
                     Subsystem = subsystem,
                 };
             }

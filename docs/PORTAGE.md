@@ -98,6 +98,19 @@ Décisions du 2026-11-20 (voir DECISIONS.md). 500 contre 500 : environ 6 ms par 
 - **Visualiseur** : rendu relatif à la caméra et profondeur logarithmique (de 0,5 m à 10⁹ m), astres procéduraux (bandes, roche, liseré d'atmosphère), Wolf 359 en naine rouge. Icônes tactiques sous 3 pixels, marqueurs d'escadre quand une escadre tient dans 10 pixels. Sélection au clic, fiche de vaisseau, caméra qui suit, accélération jusqu'à ×64 avec un budget de 30 ms de sim par image.
 - **Sans IA** (S6), la fin d'une grande bataille traîne : les escadres se dispersent et les survivants s'éloignent.
 
+### Bataille des capitaux
+
+Décisions du 2026-11-21. Flotte type ×1 : 50 coques, environ 0,4 ms par pas ; contact après environ 2 min 30 de croisière, puis 6 à 12 min de bataille de lignes.
+
+- **Gamme capitale** (`CapitalData`, en mètres) : par camp, frégate, croiseur, cuirassé, amiral et porteur. Les classes s'ajoutent après celles du proto : l'Escarmouche et ses tests de parité ne bougent pas.
+- **Batteries** : une arme peut porter des tourelles placées sur la coque (`Hardpoints`). Chaque tourelle vivante tire de sa position (masque `Alive` dans l'état de l'arme, jusqu'à 64 par arme). La lance tient son rayon (`BeamDuration`). Le canon axial exige le nez pointé : un rayon à particules instantané pour la Coalition, un obus colossal et lent pour les Clans.
+- **Dégâts localisés** : chaque dégât de coque use la tourelle vivante la plus proche de l'impact (à moins d'un demi-rayon), qui saute au-delà de ses points de vie (`TurretDestroyed`).
+- **Escadrilles** : les vagues partent derrière un chef dont les ailiers prennent la cible. Elles lisent cette cible pendant la passe séquentielle, donc de façon déterministe. Portée de lancement et laisse sont propres au hangar.
+- **Croisière** : la sortie se fait à 1,25 fois la distance d'engagement de l'ancre (ligne de l'amiral : environ 27 km).
+- **Correctif** : un astre arrête désormais les rayons à son rayon exact. Avant, la marge de 10 % des puits faisait de la géante un mur pour toute arme à rayon.
+- **Modèles** (`ShipModels`, `MeshBuilder`) : coques générées une fois par classe, qui enveloppent les tourelles de la sim, avec des socles sous celles qui dépassent. Sommets colorés et émissifs (hublots, feux, tuyères) ; panneaux de blindage dans le shader, qui s'effacent de loin. Les tourelles sont des instances qui pivotent vers la cible de leur batterie et disparaissent une fois détruites. Les plaies brûlent quand la coque descend.
+- **À suivre** : l'équilibre penche vers la Coalition. Une ligne entière vise la même cible, si bien qu'un capital tombe d'un coup au lieu de se dégrader : répartir les cibles dans la ligne.
+
 ### Notes de V0
 - **La sim ne sait rien du visualiseur.** Il lit les tables du monde et vide les événements (`DrainEvents`) après chaque pas pour en tirer des effets datés en temps de sim. La pause fige donc aussi les explosions.
 - **Rendu de Brutal Arena**, mis à l'échelle (plan lointain à 40 000 u, brouillard et lumières ponctuelles réglés pour des distances de plusieurs milliers d'unités) et complété d'un lot de lignes émissives en additif pour les tirs, les rayons, les anneaux et la grille.

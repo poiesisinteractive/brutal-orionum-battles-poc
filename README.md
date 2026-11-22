@@ -18,6 +18,7 @@ Portage du proto de combat de flotte temps réel d'Orionum (TypeScript + three.j
 | S4 Drones et hangars (vagues, passes d'attaque, interception, essaims comparés au TS) | ✅ |
 | Grande bataille : 1 200 coques et 8 000 drones à 9 ms par pas (grilles spatiales, JobScheduler, rendu instancié) | ✅ |
 | Bataille à l'échelle du système de Wolf 359 : jusqu'à 2 000 coques par camp, croisière, astres, icônes tactiques, fiche de vaisseau | ✅ |
+| Bataille des capitaux : vaisseaux de 150 m à 3 km, batteries de tourelles, canon axial, lances, dégâts localisés, escadrilles, modèles procéduraux en deux styles, tableau de bord | ✅ |
 | S5 Orionum | reporté |
 | S6 et S7 (IA, analyse, runner, parité globale) | à faire |
 
@@ -45,7 +46,8 @@ Le visualiseur fait tourner la sim en direct et la dessine avec le rendu de Brut
   - le Raid en engagement général ;
   - le Champ de puits, avec la Coalition en tir courbe sur la Tanière ;
   - les tenailles sur le Mastodonte ;
-  - le **Système de Wolf 359** (par défaut) : de 6 à 2 000 coques par camp (curseur, ou `--per-side 500`), parties de deux points tirés de la graine à des centaines de km. Les escadres traversent le système en croisière (3 km/s) puis engagent. Une géante gazeuse fait le sol, deux lunes coupent le champ ; les astres arrêtent les tirs. La dernière flotte debout l'emporte.
+  - la **bataille des capitaux** dans le système de Wolf 359 (par défaut) : la flotte type de chaque camp (un amiral de 3 km, quatre cuirassés de 1,5 km, six croiseurs, deux porteurs, douze frégates) multipliée de ×1 à ×8 (curseur, ou `--fleet 2`). Les flottes partent de deux points tirés de la graine, traversent le système en croisière (3 km/s), puis se rangent en lignes de bataille à 20-25 km. Bordées de tourelles, lances, canon axial, salves de missiles, escadrilles de chasseurs ; chaque tourelle se détruit. La dernière flotte debout l'emporte.
+  - Les capitaux sont des modèles procéduraux : Coalition effilée, blanche et bleue ; Clans massifs, rouillés et orange. Le panneau « Capitaux » les liste avec leur coque, leurs boucliers et leurs tourelles (un clic sélectionne, un second suit).
 - **Contrôles** :
   - Espace : pause.
   - `.` : un pas de sim.
