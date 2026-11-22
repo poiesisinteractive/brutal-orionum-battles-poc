@@ -18,7 +18,8 @@ public struct PerSide<T>
 [InlineArray(Size)]
 public struct ShotCounters
 {
-    public const int Size = 9 * 7;
+    /// <summary>Jusqu'à 32 classes (proto et gamme capitale), 7 types d'arme chacune.</summary>
+    public const int Size = 32 * 7;
 
     int _element;
 

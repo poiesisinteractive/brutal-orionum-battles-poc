@@ -22,6 +22,11 @@ public struct WeaponState
     /// <summary>Terrain : une cible que la conduite de tir vient de trouver cachée derrière un cœur (ignorée jusqu'à <see cref="BlockedUntil"/>).</summary>
     public int BlockedId;
     public double BlockedUntil;
+    /// <summary>Batterie : tourelles vivantes (bit i = hardpoint i), et usure de la tourelle la plus touchée.</summary>
+    public ulong Alive;
+    public float Wear;
+    /// <summary>Lance : secondes de rayon restantes sur <see cref="TargetId"/>.</summary>
+    public double BeamLeft;
 }
 
 public struct HangarState
@@ -267,6 +272,8 @@ public struct Drone
     public bool Extending;
     public DroneRole Role;
     public float Fling;
+    /// <summary>Escadrille : id du chef (le premier drone de la vague). Les ailiers prennent sa cible.</summary>
+    public int WingId;
 }
 
 /// <summary>Un projectile (obus, missile, bombe, trait laser), port de <c>Projectile</c>.</summary>

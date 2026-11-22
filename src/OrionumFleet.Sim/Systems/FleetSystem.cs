@@ -362,7 +362,11 @@ public static class FleetSystem
         ref readonly var a = ref w.Ships[anchor];
         var nearest = NearestEnemy(w, a);
         var d = nearest != 0 ? Vec.Dist(w.ShipById(nearest).Pos, a.Pos) : float.PositiveInfinity;
-        var cruise = d > (a.Cruise ? GameData.Tuning.CruiseExit : GameData.Tuning.CruiseEnter);
+        // Sortie de croisière un peu au-delà de la distance d'engagement de l'ancre (ligne de l'amiral : ~27 km) :
+        // les capitaux, lents, n'ont plus qu'à se déployer au lieu de ramper pendant des minutes.
+        var exit = MathF.Max(GameData.Tuning.CruiseExit, a.Class.PreferredRange * 1.25f);
+        var enter = exit * GameData.Tuning.CruiseEnter / GameData.Tuning.CruiseExit;
+        var cruise = d > (a.Cruise ? exit : enter);
         var goal = target >= 0 ? w.Ships[target].Pos : nearest != 0 ? w.ShipById(nearest).Pos : movePoint ?? a.Pos;
         var to = goal - a.Pos;
         if (Vec.LenSq(to) < 1)

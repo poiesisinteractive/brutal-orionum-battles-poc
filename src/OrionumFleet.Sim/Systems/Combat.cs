@@ -102,6 +102,8 @@ public static class Combat
             return;
         s.Hull -= overflow;
         w.Emit(new SimEvent { Type = SimEventType.HullHit, ShipId = s.Id, At = at, Value = overflow });
+        // Capitaux : l'impact use la tourelle la plus proche (dégâts localisés).
+        Batteries.Wear(w, shipIndex, at, overflow);
 
         var target = aimed;
         var share = GameData.Tuning.AimedSubsystemShare;
@@ -321,13 +323,18 @@ public static class Combat
         {
             ref var ws = ref s.Weapons[wi];
             var def = cls.Weapons[ws.DefIndex];
+            if (ws.BeamLeft > 0)
+                Batteries.UpdateLance(w, shipIndex, ref ws, def, dt);
             ws.Cooldown -= dt;
             if (ws.Cooldown > 0)
                 continue;
 
             if (def.Kind == WeaponKind.Pd)
             {
-                FirePointDefence(w, shipIndex, def);
+                // Batterie de défense ponctuelle : chaque tourelle vivante tire.
+                var mounts = def.Hardpoints is null ? 1 : Batteries.AliveCount(ws);
+                for (var m = 0; m < mounts; m++)
+                    FirePointDefence(w, shipIndex, def);
                 ws.Cooldown = 1 / (def.Rof * mult);
                 continue;
             }
@@ -343,6 +350,13 @@ public static class Combat
             ws.TargetId = target.Id;
             var subsystem = target.Id == focusId ? aimed : null;
             var damage = def.Damage * GameData.Tuning.DamageScale;
+
+            if (def.Hardpoints is not null)
+            {
+                // Batterie de capital : chaque tourelle vivante tire depuis sa position (voir Batteries).
+                ws.Cooldown = Batteries.Fire(w, shipIndex, ref ws, def, ti, damage, subsystem) ? 1 / (def.Rof * mult) : 0.5;
+                continue;
+            }
 
             if (def.Kind == WeaponKind.Kinetic || (def.Kind == WeaponKind.Laser && def.Beam != true))
             {
@@ -548,7 +562,7 @@ public static class Combat
         return best;
     }
 
-    static void FirePointDefence(World w, int shipIndex, WeaponDef def)
+    internal static void FirePointDefence(World w, int shipIndex, WeaponDef def)
     {
         ref readonly var s = ref w.Ships[shipIndex];
         var range = def.Range;
@@ -615,7 +629,7 @@ public static class Combat
         return MathF.Max(0, angular - tracking) * 1.5f;
     }
 
-    static float3 Jitter(World w, float3 dir, float spread)
+    internal static float3 Jitter(World w, float3 dir, float spread)
     {
         if (spread <= 0)
             return dir;

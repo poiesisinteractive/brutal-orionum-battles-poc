@@ -99,8 +99,8 @@ public static class GameData
 
     // --- Classes ---------------------------------------------------------------
 
-    /// <summary>Définitions des classes, indexées par <see cref="ShipClassId"/>.</summary>
-    public static readonly ShipClassDef[] Classes =
+    /// <summary>Les classes du proto (v0 et la Tanière).</summary>
+    static readonly ShipClassDef[] ProtoClasses =
     [
         // Coalition Solarienne : l'ordre. Peu de coques, lourdes, artillerie.
         new()
@@ -228,10 +228,13 @@ public static class GameData
         },
     ];
 
+    /// <summary>Définitions des classes, indexées par <see cref="ShipClassId"/> : celles du proto, puis la gamme capitale.</summary>
+    public static readonly ShipClassDef[] Classes = [.. ProtoClasses, .. CapitalData.Classes];
+
     public static ShipClassDef Class(ShipClassId id) => Classes[(int)id];
 
     /// <summary>Chaque coque est un personnage (esprit Nexus). Noms libres dans le ton du canon.</summary>
-    public static readonly string[][] HullNames =
+    static readonly string[][] ProtoHullNames =
     [
         ["Constance", "Résolue", "Souveraine", "Persévérance"],
         ["Lagrange", "Kepler", "Hubble", "Halley"],
@@ -243,6 +246,8 @@ public static class GameData
         ["Croc", "Clou", "Épine", "Ortie"],
         ["Tanière"],
     ];
+
+    public static readonly string[][] HullNames = [.. ProtoHullNames, .. CapitalData.HullNames];
 
     /// <summary>Nom de la n-ième coque d'une classe, ou « Libellé n+1 » quand la liste est épuisée.</summary>
     public static string HullName(ShipClassId id, int index)

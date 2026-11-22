@@ -45,13 +45,21 @@ public static class DroneSystem
             if (room <= 0)
                 continue;
             // Réserve : l'essaim reste au hangar tant que le porteur lui-même n'est pas menacé.
-            if (!EnemyNear(w, s, h.Mode == HangarMode.Reserve ? GameData.Tuning.DroneReserveRange : GameData.Tuning.DroneLaunchRange))
+            var launchRange = def.LaunchRange ?? GameData.Tuning.DroneLaunchRange;
+            var reserveRange = def.LaunchRange is { } lr ? lr * 0.4f : GameData.Tuning.DroneReserveRange;
+            if (!EnemyNear(w, s, h.Mode == HangarMode.Reserve ? reserveRange : launchRange))
                 continue;
-            // Lancement par vagues : une grappe jaillit des baies ensemble.
+            // Lancement par vagues : une grappe jaillit des baies ensemble, et vole en escadrille derrière son chef.
             var n = Math.Min(def.Wave, Math.Min(room, h.Stock));
             var interceptors = (int)Math.Floor(n * (double)def.Interceptors + 0.5); // Math.round du TS
+            var wing = 0;
             for (var k = 0; k < n; k++)
-                w.SpawnDrone(i, k < interceptors ? DroneRole.Interceptor : DroneRole.Bomber);
+            {
+                ref var drone = ref w.SpawnDrone(i, k < interceptors ? DroneRole.Interceptor : DroneRole.Bomber);
+                if (k == 0 || k == interceptors)
+                    wing = drone.Id; // intercepteurs et chasseurs forment deux escadrilles
+                drone.WingId = wing;
+            }
             // SpawnDrone ne touche pas la table des coques : la référence reste valide.
             h.Stock -= n;
             h.Cooldown = def.LaunchInterval * n * (h.Mode == HangarMode.Surge ? 0.25 : 1);
@@ -228,6 +236,10 @@ public static class DroneSystem
         ref var d = ref w.Drones[index];
         if (f.Skip || !d.Alive) // déjà abattu plus tôt dans cette passe
             return;
+        // Escadrille : l'ailier prend la cible de son chef (lue ici, en séquence : déterministe).
+        if (d.WingId != 0 && d.WingId != d.Id && w.DroneIndex(d.WingId) is var leader and >= 0 && w.Drones[leader].Alive
+            && w.Drones[leader].TargetId != 0)
+            d.TargetId = w.Drones[leader].TargetId;
         if (f.Kill)
         {
             w.DamageDrone(ref d, d.Hp);
@@ -332,7 +344,7 @@ public static class DroneSystem
                     leashCenter = w.Ships[ti].Pos;
             }
         }
-        var leash = GameData.Tuning.DroneLeash;
+        var leash = Leash(w, d);
         var best = 0;
         var bestScore = float.PositiveInfinity;
         var drones = w.Drones.AsSpan();
@@ -378,7 +390,7 @@ public static class DroneSystem
     static int PickInterceptTarget(World w, in Drone d, int carrier)
     {
         var home = carrier >= 0 ? w.Ships[carrier].Pos : d.Pos;
-        var leash = GameData.Tuning.DroneLeash;
+        var leash = Leash(w, d);
         var best = 0;
         var bestScore = float.PositiveInfinity;
         void Consider(in Drone d, int id, float3 pos, float weight)
@@ -406,6 +418,10 @@ public static class DroneSystem
         }
         return best;
     }
+
+    /// <summary>Laisse de l'essaim : celle du hangar du porteur (capitaux, en mètres), sinon celle du proto.</summary>
+    static float Leash(World w, in Drone d) =>
+        w.ShipIndex(d.CarrierId) is var c and >= 0 && w.Ships[c].Class.Hangar?.Leash is { } leash ? leash : GameData.Tuning.DroneLeash;
 
     /// <summary>Les drones visent le sous-système que leur porteur vise ; les armes par défaut.</summary>
     static Subsystem DroneAim(World w, int carrier)

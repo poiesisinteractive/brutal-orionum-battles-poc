@@ -14,6 +14,18 @@ public enum ShipClassId : byte
     Ecorcheur,
     Grele,
     Depot,
+
+    // Bataille des capitaux (échelle du système, en mètres) : quatre tailles nettes et un porteur par camp.
+    Glaive,
+    Sentinelle,
+    Rempart,
+    Souverain,
+    Firmament,
+    Saigneur,
+    BriseOs,
+    Behemoth,
+    Gouffre,
+    RucheMere,
 }
 
 // Données statiques (immuables, partagées par tous les mondes et leurs clones). Ce sont des classes :
@@ -52,6 +64,19 @@ public sealed record WeaponDef
     public float? Hp { get; init; }
     /// <summary>Vitesse de virage du guidage (rad/s), missiles et bombes.</summary>
     public float? Turn { get; init; }
+
+    // --- Capitaux ---------------------------------------------------------------
+
+    /// <summary>
+    /// Batterie : les tourelles (ou tubes) de l'arme, dans le repère de la coque en mètres (+Z nez, +X bâbord,
+    /// +Y dorsal). Chaque tourelle vivante tire depuis sa position ; un impact proche l'use puis la détruit
+    /// (<see cref="TurretHp"/>). null : une seule monture au centre, comme le proto.
+    /// </summary>
+    public float3[]? Hardpoints { get; init; }
+    /// <summary>Dégâts de coque reçus près d'une tourelle avant qu'elle ne saute.</summary>
+    public float? TurretHp { get; init; }
+    /// <summary>Lance : rayon continu pendant ce nombre de secondes ; <see cref="Damage"/> est le total d'une passe.</summary>
+    public float? BeamDuration { get; init; }
 }
 
 public sealed record DroneDef(float Hp, float Speed, float Turn, float Damage, float Rof, float Range);
@@ -71,6 +96,9 @@ public sealed record HangarDef
     public required float Interceptors { get; init; }
     public required DroneDef Interceptor { get; init; }
     public required HangarBay[] Bays { get; init; }
+    /// <summary>Capitaux (mètres) : distance de l'ennemi qui déclenche le lancement, et laisse des escadrilles. null : les valeurs du proto.</summary>
+    public float? LaunchRange { get; init; }
+    public float? Leash { get; init; }
 }
 
 /// <summary>Module Orionum : stabilisé (Coalition) ou brut (Clans).</summary>

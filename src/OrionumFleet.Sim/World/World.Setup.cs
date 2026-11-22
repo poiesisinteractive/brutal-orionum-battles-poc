@@ -135,7 +135,11 @@ public sealed partial class World
         ((Span<float>)ship.Faces).Fill(cls.ShieldFace);
         ((Span<SubsystemState>)ship.Subsystems).Fill(new SubsystemState(cls.SubsystemHp, cls.SubsystemHp, false));
         for (var w = 0; w < cls.Weapons.Length; w++)
+        {
             ship.Weapons[w] = new WeaponState { DefIndex = (byte)w, Cooldown = 1.5 * Rng.NextDouble() }; // range(0, 1.5) du TS, en double
+            if (cls.Weapons[w].Hardpoints is { Length: > 0 } hardpoints)
+                ship.Weapons[w].Alive = hardpoints.Length >= 64 ? ulong.MaxValue : (1UL << hardpoints.Length) - 1;
+        }
         if (cls.Hangar is { } hangar)
             ship.Hangar = new HangarState { Stock = hangar.Stock, Cooldown = 0, Mode = HangarMode.Attack };
 

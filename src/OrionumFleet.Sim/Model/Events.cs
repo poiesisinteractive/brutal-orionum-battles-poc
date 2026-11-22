@@ -31,6 +31,8 @@ public enum SimEventType : byte
     EmpHit,
     Withdrawn,
     Launch,
+    /// <summary>Une tourelle de batterie saute (<see cref="SimEvent.At"/> : sa position).</summary>
+    TurretDestroyed,
 }
 
 /// <summary>Type de rayon d'un événement <see cref="SimEventType.Beam"/>.</summary>
@@ -39,6 +41,8 @@ public enum BeamKind : byte
     Pd,
     Drone,
     Turbolaser,
+    /// <summary>Lance d'un capital : rayon continu, épais.</summary>
+    Lance,
 }
 
 /// <summary>

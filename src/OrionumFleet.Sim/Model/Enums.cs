@@ -83,6 +83,14 @@ public enum WeaponId : byte
     FusionBomb,
     Emp,
     Pd,
+    /// <summary>Canon axial d'un vaisseau amiral : salve dévastatrice, longue recharge, il faut pointer la coque.</summary>
+    Spinal,
+    /// <summary>Lance : rayon continu de plusieurs secondes.</summary>
+    Lance,
+    /// <summary>Tourelle lourde de bordée.</summary>
+    HeavyTurret,
+    /// <summary>Salves de missiles des capitaux.</summary>
+    MissileBank,
 }
 
 public enum DroneRole : byte

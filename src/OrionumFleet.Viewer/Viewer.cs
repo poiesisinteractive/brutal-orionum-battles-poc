@@ -20,6 +20,8 @@ struct Effect
     public float3 To;
     public float Size;
     public float3 Color;
+    /// <summary>Faisceaux épais (lances, rayon axial) : largeur en mètres ; 0 = trait fin.</summary>
+    public float Width;
 }
 
 /// <summary>Ce que suit la caméra.</summary>
@@ -62,7 +64,7 @@ sealed class Viewer : IDisposable
     World _world = null!;
     int _scenario = Scenarios.SystemBattle;
     int _seed = 1;
-    int _perSide = 500;
+    int _fleetScale = 2;
     bool _paused;
     float _speed = 1;
     bool _stepOnce;
@@ -114,7 +116,7 @@ sealed class Viewer : IDisposable
             float.TryParse(Arg(name), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
         _scenario = Math.Clamp((int)FloatArg("--scenario", _scenario), 0, Scenarios.Names.Length - 1);
         _seed = (int)FloatArg("--seed", 1);
-        _perSide = Math.Clamp((int)FloatArg("--per-side", _perSide), 6, 2000);
+        _fleetScale = Math.Clamp((int)FloatArg("--fleet", _fleetScale), 1, 8);
         _capturePath = Arg("--capture");
         _captureAt = FloatArg("--at", 60);
         _captureSelect = Arg("--select");
@@ -158,7 +160,7 @@ sealed class Viewer : IDisposable
 
     void Restart()
     {
-        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _perSide);
+        _world = Scenarios.Create(_scenario, (uint)Math.Max(1, _seed), _fleetScale);
         _effects.Clear();
         _feed.Clear();
         _accumulator = 0;
@@ -298,6 +300,15 @@ sealed class Viewer : IDisposable
         var glow = e.Side == Side.Coalition ? CoalitionGlow : ClansGlow;
         switch (e.Type)
         {
+            case SimEventType.Beam when e.Beam == BeamKind.Lance:
+                // Lance (rayon tenu, ré-émis à chaque pas) ou rayon axial (un éclair colossal).
+                var spinalBeam = e.WeaponId == WeaponId.Spinal;
+                _effects.Add(new Effect
+                {
+                    Type = e.Type, Start = _world.Time, Life = spinalBeam ? 0.9f : 0.07f, At = e.At, To = e.Vector,
+                    Color = spinalBeam ? new float3(1.2f, 1.6f, 2.4f) : glow * 1.6f, Width = spinalBeam ? 45 : 9,
+                });
+                break;
             case SimEventType.Beam:
                 var (beamColor, beamLife) = e.Beam switch
                 {
@@ -307,9 +318,18 @@ sealed class Viewer : IDisposable
                 };
                 AddEffect(e.Type, beamLife, e.At, e.Vector, 0, beamColor);
                 break;
+            case SimEventType.Fire when e.WeaponId == WeaponId.Spinal:
+                // Moment fort : la salve axiale d'un vaisseau amiral.
+                AddEffect(SimEventType.Explosion, 1.2f, e.At, default, 260, new float3(1f, 0.9f, 0.7f));
+                Feed($"{_world.Time:F0} s  {ShipLabel(e.OtherId)} tire son canon axial");
+                break;
+            case SimEventType.TurretDestroyed:
+                AddEffect(SimEventType.Explosion, 1.1f, e.At, default, 45, new float3(1f, 0.55f, 0.2f));
+                break;
             case SimEventType.Explosion:
-                // Plafonnée : la destruction d'une grosse coque (taille = 2,2 rayons) ne doit pas noyer l'image.
-                AddEffect(e.Type, 0.7f, e.At, default, Math.Clamp(e.Value * 1.5f, 6, 140), new float3(1f, 0.6f, 0.25f));
+                // Plafonnée pour les petites coques ; la mort d'un capital (taille = 2,2 rayons) reste énorme mais lisible.
+                var size = e.Value >= 300 ? MathF.Min(e.Value * 0.45f, 1600) : Math.Clamp(e.Value * 1.5f, 6, 140);
+                AddEffect(e.Type, e.Value >= 300 ? 3f : 0.7f, e.At, default, size, new float3(1f, 0.6f, 0.25f));
                 break;
             case SimEventType.Secondary:
                 AddEffect(SimEventType.Explosion, 0.8f, e.At, default, Math.Clamp(e.Value * 1.5f, 8, 60), new float3(1f, 0.5f, 0.2f));
@@ -469,7 +489,7 @@ sealed class Viewer : IDisposable
         if (SelectedIndex is not (var i and >= 0))
             return;
         _follow = Follow.Ship;
-        _distance = Math.Clamp(_world.Ships[i].Class.Radius * 9, 150, 3000);
+        _distance = Math.Clamp(_world.Ships[i].Class.Radius * 5, 150, 15_000);
     }
 
     void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods)
@@ -743,6 +763,19 @@ sealed class Viewer : IDisposable
             var fade = 1 - t;
             switch (fx.Type)
             {
+                case SimEventType.Beam when fx.Width > 0:
+                    // Faisceau épais : un pavé émissif étiré de la bouche à l'impact, et un cœur blanc.
+                    var axis = fx.To - fx.At;
+                    var length = Vec.Len(axis);
+                    if (length < 1)
+                        break;
+                    var dir = axis / length;
+                    var up = MathF.Abs(dir.Y) > 0.98f ? float3.UnitX : float3.UnitY;
+                    var frame = float4x4.CreateWorld((fx.At + fx.To) * 0.5f, dir, up);
+                    var width = fx.Width * (0.6f + 0.4f * fade);
+                    _renderer.DrawBox(float4x4.CreateScale(width, width, length / 2) * frame, fx.Color, 6 * fade);
+                    _renderer.Line(fx.At, fx.To, new float3(3, 3, 3) * fade);
+                    break;
                 case SimEventType.Beam:
                     _renderer.Line(fx.At, fx.To, fx.Color * fade);
                     break;
@@ -884,7 +917,7 @@ sealed class Viewer : IDisposable
             if (_scenario == Scenarios.SystemBattle)
             {
                 ImGui.SetNextItemWidth(260);
-                ImGui.SliderInt("Coques par camp"u8, ref _perSide, 6, 2000, "%d"u8, ImGuiSliderFlags.Logarithmic);
+                ImGui.SliderInt("Flotte (x 25 coques par camp)"u8, ref _fleetScale, 1, 8, "x%d"u8, ImGuiSliderFlags.None);
             }
             ImGui.SetNextItemWidth(120);
             ImGui.InputInt("Graine"u8, ref _seed, 1, 10, ImGuiInputTextFlags.None);

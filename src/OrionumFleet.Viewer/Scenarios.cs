@@ -12,13 +12,13 @@ static class Scenarios
         "Raid sur Wolf 359 : engagement général",
         "Champ de puits : tir courbe sur la Tanière",
         "Raid : tenailles sur le Mastodonte",
-        "Système de Wolf 359 : grande bataille",
+        "Système de Wolf 359 : bataille des capitaux",
     ];
 
     public const int SystemBattle = 3;
 
-    /// <param name="perSide">Bataille système : coques par camp, dans les proportions de l'Escarmouche.</param>
-    public static World Create(int index, uint seed, int perSide = 500)
+    /// <param name="fleetScale">Bataille système : la flotte type des capitaux (25 coques par camp) multipliée.</param>
+    public static World Create(int index, uint seed, int fleetScale = 2)
     {
         var options = new WorldOptions
         {
@@ -32,8 +32,8 @@ static class Scenarios
         if (index == SystemBattle)
             options = options with
             {
-                Coalition = GameData.Fleet(Side.Coalition, perSide),
-                Clans = GameData.Fleet(Side.Clans, perSide),
+                Coalition = CapitalData.Fleet(Side.Coalition, fleetScale),
+                Clans = CapitalData.Fleet(Side.Clans, fleetScale),
             };
         var w = new World(seed, options);
 

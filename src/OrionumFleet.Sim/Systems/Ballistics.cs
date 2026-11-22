@@ -69,7 +69,8 @@ public static class Ballistics
                 continue;
             var r = Terrain.WellCore(g);
             var v = MathF.Max(speed, 1);
-            var capture = speed <= 0 ? r * 1.1f : r * MathF.Sqrt(1 + 2 * Terrain.WellPull(g) * r / (v * v));
+            // Un astre (sans attraction) arrête exactement à son rayon ; la marge des rayons ne vaut que pour un puits.
+            var capture = g.Planet ? r : speed <= 0 ? r * 1.1f : r * MathF.Sqrt(1 + 2 * Terrain.WellPull(g) * r / (v * v));
             if (SegmentDist(a, b, g.Pos) <= capture)
                 return true;
         }
